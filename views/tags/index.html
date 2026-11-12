@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>标签画像 · Bili scene-view-booster</title>
+  <style>
+    :root { color-scheme: light dark; --bg:#f6f7f9; --card:#fff; --line:#e3e6eb; --text:#1f2329; --muted:#7a828e; --accent:#2f6fed; --danger:#d64545; }
+    @media (prefers-color-scheme: dark) { :root { --bg:#17191d; --card:#20242a; --line:#343a43; --text:#e8eaed; --muted:#9aa1ab; --accent:#6f9bff; --danger:#ff7b7b; } }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif; }
+    .wrap { max-width:1180px; margin:0 auto; padding:24px; }
+    h1 { font-size:20px; margin:0 0 4px; }
+    .sub { color:var(--muted); margin:0 0 18px; }
+    .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+    .tabs button { border:1px solid var(--line); background:var(--card); color:var(--text); padding:8px 14px; border-radius:8px; cursor:pointer; }
+    .tabs button.active { border-color:var(--accent); color:var(--accent); }
+    .panel { display:none; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; overflow:auto; }
+    .panel.active { display:block; }
+    table { width:100%; border-collapse:collapse; min-width:760px; }
+    th, td { border-bottom:1px solid var(--line); padding:8px 6px; text-align:left; vertical-align:middle; }
+    th { color:var(--muted); font-weight:600; font-size:12px; }
+    input[type=text], input[type=number] { background:transparent; color:var(--text); border:1px solid var(--line); border-radius:6px; padding:5px 7px; width:100%; }
+    input[type=number] { width:78px; }
+    button.act { border:1px solid var(--line); background:transparent; color:var(--text); border-radius:6px; padding:4px 8px; cursor:pointer; }
+    button.act:hover { border-color:var(--accent); color:var(--accent); }
+    button.danger:hover { border-color:var(--danger); color:var(--danger); }
+    .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
+    .row input[type=text] { max-width:320px; }
+    .muted { color:var(--muted); font-size:12px; }
+    .ok { color:#2e9b5b; }
+    .err { color:var(--danger); }
+    details { margin-top:8px; }
+    pre { white-space:pre-wrap; word-break:break-all; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:8px; max-height:160px; overflow:auto; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>标签画像</h1>
+  <p class="sub">Bili scene-view-booster · Admin Like / Assistant Taste / Block / Audit。保存后下一轮 feed 生效。</p>
+  <div class="tabs" id="tabs">
+    <button data-tab="admin" class="active">Admin Like</button>
+    <button data-tab="taste">Assistant Taste</button>
+    <button data-tab="block">Block</button>
+    <button data-tab="audit">Audit</button>
+    <button id="refresh">刷新</button>
+  </div>
+  <div class="panel active" id="panel-admin">
+    <div class="row"><span class="muted">Base 权重 0–5；effective = base + taste（locked 时只取 base）。pinned 最多 1 个。</span></div>
+    <div class="row"><input id="admin-tag" type="text" placeholder="新 tag"><input id="admin-query" type="text" placeholder="搜索词（可空）"><button class="act" id="admin-add">添加</button></div>
+    <table><thead><tr><th>Tag</th><th>Search query</th><th>Base</th><th>Effective</th><th>Locked</th><th>Pinned</th><th>Status</th><th></th></tr></thead><tbody id="admin-rows"></tbody></table>
+  </div>
+  <div class="panel" id="panel-taste">
+    <div class="row"><span class="muted">助手自己的 taste；学习值 + 管理员手调。助手只能改 taste，不能改 Admin Like / Block。</span></div>
+    <table><thead><tr><th>Tag</th><th>Weight</th><th>Learned</th><th>Confidence</th><th>n</th><th>Status</th><th>Last signal</th><th></th></tr></thead><tbody id="taste-rows"></tbody></table>
+  </div>
+  <div class="panel" id="panel-block">
+    <div class="row"><input id="block-input" type="text" placeholder="要屏蔽的 tag / 短语"><button class="act" id="block-add">屏蔽</button></div>
+    <table><thead><tr><th>Tag</th><th>Reason</th><th>By</th><th>Time</th><th></th></tr></thead><tbody id="block-rows"></tbody></table>
+  </div>
+  <div class="panel" id="panel-audit">
+    <div class="row"><span class="muted">admin / assistant / learning 的所有改动。</span></div>
+    <table><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Owner</th><th>Tag</th><th>Before</th><th>After</th><th>Reason</th></tr></thead><tbody id="audit-rows"></tbody></table>
+  </div>
+  <p id="status" class="muted"></p>
+</div>
+<script>
+const getBridge = () => window.AstrBotPluginView || window.AstrBotPluginPage;
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = (v, d=0) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
+let data = { admin: [], taste: [], block: [] };
+let bridgeReady = null;
+let pendingDelete = '';
+
+function setStatus(msg, isErr=false) {
+  const el = $('status'); el.textContent = msg || ''; el.className = isErr ? 'err' : 'ok';
+}
+async function ensureBridge() {
+  const bridge = getBridge();
+  if (!bridge) throw new Error('AstrBotPluginPage bridge 不可用');
+  if (!bridgeReady) bridgeReady = bridge.ready().catch(() => ({}));
+  return bridgeReady;
+}
+async function api(path, opts={}) {
+  await ensureBridge();
+  const bridge = getBridge();
+  const method = String(opts.method || 'GET').toUpperCase();
+  const pagePath = 'page/' + String(path).replace(/^\/+/, '');
+  let res;
+  if (method === 'GET') {
+    res = await bridge.apiGet(pagePath, {});
+  } else {
+    const body = typeof opts.body === 'string' ? JSON.parse(opts.body || '{}') : (opts.body || {});
+    res = await bridge.apiPost(pagePath, body);
+  }
+  if (res && res.status === 'error') throw new Error(res.message || 'API error');
+  if (res && res.ok === false) throw new Error(res.error || 'API error');
+  return res && res.status === 'ok' && res.data !== undefined ? res.data : (res?.data ?? res);
+}
+function switchTab(name) {
+  document.querySelectorAll('#tabs button[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach((p) => p.classList.toggle('active', p.id === `panel-${name}`));
+}
+async function load() {
+  pendingDelete = '';
+  try {
+    const [tags, audit] = await Promise.all([api('/tags'), api('/tags/audit')]);
+    data = tags;
+    renderAdmin(); renderTaste(); renderBlock(); renderAudit(audit.items || []);
+    setStatus(`已加载：${data.admin.length} admin / ${data.taste.length} taste / ${data.block.length} block`);
+  } catch (e) { setStatus(e.message, true); }
+}
+function renderAdmin() {
+  $('admin-rows').innerHTML = (data.admin || []).map((r, i) => `
+    <tr data-tag="${esc(r.tag)}">
+      <td><strong>${esc(r.tag)}</strong>${r.blocked ? ' <span class="muted">(blocked)</span>' : ''}</td>
+      <td><input type="text" data-k="search_query" value="${esc(r.search_query || '')}"></td>
+      <td><input type="number" step="0.1" min="0" max="5" data-k="base_weight" value="${num(r.base_weight)}"></td>
+      <td>${num(r.effective).toFixed(2)} <span class="muted">Δ ${num(r.assistant_delta).toFixed(2)}</span></td>
+      <td><input type="checkbox" data-k="locked" ${r.locked ? 'checked' : ''}></td>
+      <td><input type="checkbox" data-k="pinned" ${r.pinned ? 'checked' : ''}></td>
+      <td>${esc(r.status || '')}</td>
+      <td><button class="act" data-save-admin>保存</button> <button class="act danger" data-delete-admin>删除</button></td>
+    </tr>`).join('') || '<tr><td colspan="8" class="muted">暂无 admin tag</td></tr>';
+}
+function renderTaste() {
+  $('taste-rows').innerHTML = (data.taste || []).map((r) => `
+    <tr data-tag="${esc(r.tag)}">
+      <td><strong>${esc(r.tag)}</strong></td>
+      <td><input type="number" step="0.1" min="-5" max="5" data-k="weight" value="${num(r.weight)}"></td>
+      <td>${num(r.learned_weight).toFixed(2)} <span class="muted">manual ${num(r.manual_delta).toFixed(2)}</span></td>
+      <td>${num(r.confidence).toFixed(2)}</td>
+      <td>${num(r.n).toFixed(1)}</td>
+      <td>${esc(r.status || '')}</td>
+      <td class="muted">${esc(r.last_signal_at || '')}</td>
+      <td><button class="act" data-save-taste>保存</button> <button class="act danger" data-mute>静音</button></td>
+    </tr>`).join('') || '<tr><td colspan="8" class="muted">暂无 taste，等助手看几条视频后出现</td></tr>';
+}
+function renderBlock() {
+  $('block-rows').innerHTML = (data.block || []).map((tag) => `
+    <tr data-tag="${esc(tag)}"><td><strong>${esc(tag)}</strong></td><td class="muted">-</td><td class="muted">-</td><td class="muted">-</td>
+    <td><button class="act danger" data-unblock>解除</button></td></tr>`).join('') || '<tr><td colspan="5" class="muted">暂无 block</td></tr>';
+}
+function renderAudit(items) {
+  $('audit-rows').innerHTML = (items || []).map((r) => `
+    <tr><td class="muted">${esc(r.at)}</td><td>${esc(r.actor)}</td><td>${esc(r.action)}</td><td>${esc(r.owner)}</td>
+    <td>${esc(r.tag)}</td><td><details><summary>before</summary><pre>${esc(r.before_json || '')}</pre></details></td>
+    <td><details><summary>after</summary><pre>${esc(r.after_json || '')}</pre></details></td><td>${esc(r.reason || '')}</td></tr>`).join('') || '<tr><td colspan="8" class="muted">暂无审计</td></tr>';
+}
+document.addEventListener('click', async (ev) => {
+  const tab = ev.target.closest('#tabs button[data-tab]');
+  if (tab) { switchTab(tab.dataset.tab); return; }
+  if (ev.target.id === 'refresh') { await load(); return; }
+  const tr = ev.target.closest('tr');
+  if (!tr) return;
+  const tag = tr.dataset.tag;
+  try {
+    if (ev.target.matches('[data-save-admin]')) {
+      const get = (k) => tr.querySelector(`[data-k="${k}"]`);
+      await api('/tags/admin', { method:'POST', body: JSON.stringify({
+        tag, search_query: get('search_query').value, base_weight: num(get('base_weight').value, 1),
+        locked: get('locked').checked, pinned: get('pinned').checked, status: 'active', reason: 'UI edit'
+      })});
+      await load();
+    } else if (ev.target.matches('[data-delete-admin]')) {
+      if (pendingDelete !== tag) {
+        pendingDelete = tag;
+        ev.target.textContent = '确认删除';
+        setStatus(`再次点击「确认删除」才会删除「${tag}」，并静音同名 taste。`);
+        return;
+      }
+      pendingDelete = '';
+      await api('/tags/admin', { method:'POST', body: JSON.stringify({
+        tag, action:'delete', mute_taste:true, reason:'UI delete'
+      })});
+      await load();
+    } else if (ev.target.matches('[data-save-taste]')) {
+      await api('/tags/taste', { method:'POST', body: JSON.stringify({ tag, weight: num(tr.querySelector('[data-k="weight"]').value), reason:'UI edit' }) });
+      await load();
+    } else if (ev.target.matches('[data-mute]')) {
+      await api('/tags/taste', { method:'POST', body: JSON.stringify({ tag, action:'remove', reason:'muted from UI' }) });
+      await load();
+    } else if (ev.target.matches('[data-unblock]')) {
+      await api('/tags/block', { method:'POST', body: JSON.stringify({ tag, action:'unblock', reason:'UI unblock' }) });
+      await load();
+    }
+  } catch (e) { setStatus(e.message, true); }
+});
+$('block-add').addEventListener('click', async () => {
+  const tag = $('block-input').value.trim();
+  if (!tag) return;
+  try { await api('/tags/block', { method:'POST', body: JSON.stringify({ tag, action:'block', reason:'UI add' }) }); $('block-input').value=''; await load(); }
+  catch (e) { setStatus(e.message, true); }
+});
+$('admin-add').addEventListener('click', async () => {
+  const tag = $('admin-tag').value.trim();
+  if (!tag) return;
+  try {
+    await api('/tags/admin', { method:'POST', body: JSON.stringify({
+      tag, search_query: $('admin-query').value.trim() || tag, base_weight: 1, locked: false, pinned: false, status: 'active', reason: 'UI add'
+    })});
+    $('admin-tag').value=''; $('admin-query').value=''; await load();
+  } catch (e) { setStatus(e.message, true); }
+});
+if (document.readyState === 'complete') load();
+else window.addEventListener('load', load, { once: true });
+</script>
+</body>
+</html>

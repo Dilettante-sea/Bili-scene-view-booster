@@ -1,0 +1,20 @@
+name: astrbot_plugin_whale_sense
+display_name: Bili scene-view-booster
+short_desc: 让助手自己刷 B 站、看懂、记住，并把想说的留到下次聊天
+desc: >-
+  给 AstrBot 装一条"有日子的鱼"：时钟到点后，助手在内部 work 会话里看一批 B 站文案，
+  自己决定哪些值得深读；深读交给现有的 dsh 视频插件（字幕/ASR/OCR/抽帧），
+  结果回到助手自己的模型做终评，写进 LivingMemory，并在本地 Markdown 留日记。
+  must 由助手自己的话说给管理员；没聊透的进副队列，最多三次后退场，
+  等用户某天主动检索再聊。不评论、不私信、不点赞、不收藏、不关注。
+version: 0.1.0
+author: Dilettante-sea
+repo: "https://github.com/Dilettante-sea/Bili-scene-view-booster"
+astrbot_version: ">=4.24.2"
+support_platforms:
+  - matrix
+tags:
+  - dsh
+  - bilibili
+  - memory
+  - autonomy

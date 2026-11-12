@@ -1,0 +1,160 @@
+{
+  "enabled": {
+    "description": "总开关：关闭后时钟不再排计划，已入队的 must 保留",
+    "type": "bool",
+    "default": true
+  },
+  "work_umo": {
+    "description": "助手内部工作会话的 UMO（必填）",
+    "hint": "中间过程（初筛/派单/终评）都发到这里，不打扰管理员。格式照抄 AstrBot 会话列表里的 UMO，例如 matrix:OtherMessage:!房间id",
+    "type": "string",
+    "default": ""
+  },
+  "admin_umo": {
+    "description": "管理员私聊会话的 UMO。must 推送、日报/审计走这里（必填）",
+    "hint": "格式例如 matrix:FriendMessage:!房间id；留空时 must 推送和日报都发不出去",
+    "type": "string",
+    "default": ""
+  },
+  "feed_cli": {
+    "description": "bili-sense CLI 的绝对路径（feed/meta/doctor）（必填）",
+    "hint": "填 bili-sense.mjs 的完整路径，例如 D:/tools/bili-sense/bili-sense.mjs；留空会在跑 feed 时报「未配置 feed_cli」",
+    "type": "string",
+    "default": ""
+  },
+  "feed_n": {
+    "description": "每批候选数量",
+    "type": "int",
+    "default": 5
+  },
+  "min_duration_sec": {
+    "description": "最短视频时长（秒）",
+    "hint": "默认 180，滤掉三分钟以下短视频",
+    "type": "int",
+    "default": 180
+  },
+  "bili_sessdata": {
+    "description": "B 站 SESSDATA",
+    "type": "string",
+    "hint": "从浏览器/插件复制完整 SESSDATA；留空则回退 AstrBot biliread 配置",
+    "default": ""
+  },
+  "bili_jct": {
+    "description": "B 站 bili_jct",
+    "type": "string",
+    "hint": "与 SESSDATA 配套；留空不影响只读搜索，但部分登录接口需要",
+    "default": ""
+  },
+  "dsh_timeout_sec": {
+    "description": "DSH 深读任务超时秒数",
+    "hint": "视频下载/OCR/抽帧可能 5 分钟以上",
+    "type": "int",
+    "default": 600
+  },
+  "node_path": {
+    "description": "运行 bili-sense 的 node.exe 绝对路径",
+    "hint": "留空自动找 DSH 运行时/PATH",
+    "type": "string",
+    "default": ""
+  },
+  "gateway_cache": {
+    "description": "dsh-astrbot-gateway 的 cache 目录",
+    "hint": "inbox/outbox 所在地址；留空按 ~/dsh-astrbot-gateway/cache 找（与 gateway 插件默认项目目录一致）",
+    "type": "string",
+    "default": ""
+  },
+  "persona_id": {
+    "description": "写记忆/判断时使用的人格 id",
+    "type": "string",
+    "hint": "必须与 LivingMemory 实际写入/召回时的一致",
+    "default": "default"
+  },
+  "provider_id": {
+    "description": "内部判断用的 provider id",
+    "hint": "留空用当前会话的 provider",
+    "type": "string",
+    "default": ""
+  },
+  "clock_windows": {
+    "description": "作息窗口",
+    "hint": "逗号分隔，格式 HH:MM-HH:MM；24:00 可写",
+    "type": "string",
+    "default": "20:00-24:00"
+  },
+  "clock_wakes": {
+    "description": "每个窗口最多醒几次（1-12）",
+    "type": "int",
+    "default": 2
+  },
+  "skip_chance": {
+    "description": "每次计划“这次不想看”的概率（0-1）",
+    "type": "float",
+    "default": 0.3
+  },
+  "min_gap_min": {
+    "description": "两次醒来之间的最小间隔（分钟）",
+    "type": "int",
+    "default": 10
+  },
+  "quiet_hours": {
+    "description": "安静时段",
+    "hint": "不推送 must/maybe；格式 HH:MM-HH:MM",
+    "type": "string",
+    "default": "00:00-08:00"
+  },
+  "deep_per_day": {
+    "description": "每天最多深读几条（1-20）",
+    "type": "int",
+    "default": 5
+  },
+  "deep_per_wake": {
+    "description": "每次醒来最多深读几条（1-5）",
+    "type": "int",
+    "default": 3
+  },
+  "must_per_day": {
+    "description": "每天最多产出几条 must（正常日）",
+    "type": "int",
+    "default": 2
+  },
+  "must_backlog_per_day": {
+    "description": "有主队列积压的次日，must 产出额降为几条",
+    "type": "int",
+    "default": 1
+  },
+  "maybe_per_day": {
+    "description": "每天最多分享几条 maybe",
+    "type": "int",
+    "default": 1
+  },
+  "idle_minutes": {
+    "description": "距助手最后一条消息多久后才允许主动推 must（分钟）",
+    "type": "int",
+    "default": 60
+  },
+  "max_shallow_attempts": {
+    "description": "“没聊透”最多推送几次；之后出队，留待主动检索",
+    "type": "int",
+    "default": 3
+  },
+  "diary_dir": {
+    "description": "日记目录；留空用插件数据目录下的 diary/",
+    "type": "string",
+    "default": ""
+  },
+  "report_daily_at": {
+    "description": "日报时间 HH:MM",
+    "type": "string",
+    "default": "23:30"
+  },
+  "report_weekly_at": {
+    "description": "周报时间，例如 Sun 21:00",
+    "type": "string",
+    "default": "Sun 21:00"
+  },
+  "dry_run": {
+    "description": "试运行：只写审计/日记，不派单、不写记忆、不发送",
+    "type": "bool",
+    "default": false
+  }
+}

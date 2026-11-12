@@ -1,8 +1,46 @@
+# ── Python ────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# ── 虚拟环境 ──────────────────────────────────────────────
+.venv/
+venv/
+env/
+ENV/
+
+# ── 测试 / 类型检查 / 覆盖率缓存 ───────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# ── 本插件的运行时数据：绝不入库 ───────────────────────────
 *.db
 *.db-*
 *.jsonl
+*.log
 data/
-.venv/
+diary/
+attachments/
+
+# ── 凭据 / cookie ────────────────────────────────────────
+.env
+.env.*
+cookies.txt
+*.cookie
+*.sessdata
+
+# ── 编辑器 / 系统 ────────────────────────────────────────
+.idea/
+.vscode/
 .DS_Store
+Thumbs.db
+desktop.ini

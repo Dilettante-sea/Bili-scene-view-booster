@@ -1,0 +1,2 @@
+# Bili-scene-view-booster
+参数名称 astrbot_plugin_whale_sense；基于其他多个项目的组合插件，服务于使用Astrbot+Tailscale+Element X+Deepseek Harness的大肥鱼聊天机器人。功能为向机器人推送基于管理员所添加规则筛选出的B站视频，达成大肥鱼自动看视频的目的，并视情况将情景记忆以日记与长期记忆的形式落盘，并在此过程中通过自学习来形成独属于这只大肥鱼的视频偏好。

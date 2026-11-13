@@ -1,4 +1,4 @@
-{
+﻿{
   "enabled": {
     "description": "总开关：关闭后时钟不再排计划，已入队的 must 保留",
     "type": "bool",
@@ -156,7 +156,8 @@
     "default": 3
   },
   "diary_dir": {
-    "description": "日记目录；留空用插件数据目录下的 diary/",
+    "description": "日记目录；留空 = 插件所在目录下的 diary/（备份插件就备份了日记）",
+    "hint": "默认结构：diary/年-月/月-日.md（一天一个文件，如 diary/2026-11/11-13.md）；周报写在 diary/年-月/月-日~日.md（如 11-1~7.md）。填了就用填的目录，结构不变。",
     "type": "string",
     "default": ""
   },

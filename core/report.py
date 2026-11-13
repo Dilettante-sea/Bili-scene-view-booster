@@ -9,6 +9,8 @@ from typing import Any
 from astrbot.core.message.components import Plain
 from astrbot.core.message.message_event_result import MessageChain
 
+from . import diary as diary_mod
+
 
 def _today() -> str:
     return datetime.now().astimezone().date().isoformat()
@@ -76,7 +78,7 @@ def daily_text(plugin, date: str | None = None) -> str:
         )
     if not musts:
         lines.append("  （今天没有产出 must）")
-    lines.append(f"日记：{(Path(plugin.data_dir) / 'diary' / (date[:7] + '.md'))}")
+    lines.append(f"日记：{diary_mod.daily_path(plugin)}")
     return "\n".join(lines)[:3800]
 
 
@@ -167,8 +169,13 @@ class ReportScheduler:
             target = now.replace(hour=daily[0], minute=daily[1], second=0, microsecond=0)
             today = now.date().isoformat()
             if now >= target and self.plugin.db.get_kv("last_report_daily") != today:
-                ok = await send_report(self.plugin, daily_text(self.plugin))
+                text = daily_text(self.plugin)
+                ok = await send_report(self.plugin, text)
                 if ok:
+                    try:
+                        diary_mod.append_report(self.plugin, "日报", text)
+                    except Exception as exc:
+                        self.plugin.logger.warning(f"[whale-sense] 写日报文件失败: {exc}")
                     self.plugin.db.set_kv("last_report_daily", today)
         weekly_raw = str(self.plugin.cfg.get("report_weekly_at", "Sun 21:00"))
         try:
@@ -180,6 +187,17 @@ class ReportScheduler:
         target = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
         week = f"{now.isocalendar().year}-{now.isocalendar().week}"
         if now.weekday() == target_wd and now >= target and self.plugin.db.get_kv("last_report_weekly") != week:
-            ok = await send_report(self.plugin, weekly_text(self.plugin))
+            text = weekly_text(self.plugin)
+            ok = await send_report(self.plugin, text)
             if ok:
+                try:
+                    end_day = now.date()
+                    diary_mod.append_report(
+                        self.plugin,
+                        "周报",
+                        text,
+                        week=(end_day - timedelta(days=6), end_day),
+                    )
+                except Exception as exc:
+                    self.plugin.logger.warning(f"[whale-sense] 写周报文件失败: {exc}")
                 self.plugin.db.set_kv("last_report_weekly", week)

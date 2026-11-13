@@ -1,4 +1,4 @@
-# Bili scene-view-booster（astrbot_plugin_whale_sense）
+﻿# Bili scene-view-booster（astrbot_plugin_whale_sense）
 
 > 让 AstrBot 里的助手有“自己的 B 站时间”：到点自己刷一批 B 站视频，先看文案初筛，再让 DSH 只读地读字幕/抽帧，最后用自己的模型判断值不值得聊。
 > 
@@ -75,6 +75,7 @@ pending -> pushing -> pushed
 
 - 助手调 LivingMemory 的 `memorize_long_term_memory`，插件只记录 `memory_id`。
 - 本地 Markdown 日记：`must` 表格 + 详细段落；`maybe` 简略；deep-no 负评。
+- 日记路径：`diary/年-月/月-日.md`，一天一个文件（如 `diary/2026-11/11-13.md`）；周报单独成文 `diary/年-月/月-日~日.md`（如 `11-1~7.md`）。日报/周报在发送成功后同时落盘到对应文件。
 - SQLite `events` 表 + `whale-audit.jsonl` 双写审计。
 - `/whale report [date]` 生成确定性审计摘要；日报默认 23:30，周报默认周日 21:00，直接发到 admin。
 - 管理员可以查看状态、队列、must 详情、why 链路、deep 任务，删除单条记忆。
@@ -347,7 +348,7 @@ effective ≈ 2.43
 │   ├─ wake.py      cron_manager.add_active_job → work/admin 会话         │
 │   ├─ deep_watch   轮询 gateway cache/outbox → 解析 JSON → 唤醒 work/admin│
 │   ├─ must_loop    到点 → context.send_message → admin                   │
-│   ├─ diary        data/diary/YYYY-MM.md                                 │
+│   ├─ diary        diary/YYYY-MM/M-D.md                                 │
 │   ├─ report       确定性文本 → context.send_message → admin             │
 │   └─ SQLite       whale.db + whale-audit.jsonl                          │
 │                                                                        │
@@ -499,7 +500,7 @@ node /path/to/bili-sense/bili-sense.mjs feed --json --n 5 --min-duration 180
 | `must_per_day` / `must_backlog_per_day` | 2 / 1             | must 产出配额（提示+统计）      |
 | `idle_minutes`                          | 60                | 距助手最后一条消息多久才推 must    |
 | `max_shallow_attempts`                  | 3                 | 没聊透最多推几次              |
-| `diary_dir`                             | 空                 | 日记目录；空则 `data/diary/` |
+| `diary_dir`                             | 空                 | 日记目录；空则 `插件目录/diary/YYYY-MM/M-D.md` |
 | `report_daily_at` / `report_weekly_at`  | 23:30 / Sun 21:00 | 报告时间                  |
 | `dry_run`                               | false             | 只审计/日记，不唤醒/不派单/不发送    |
 
@@ -526,7 +527,7 @@ whale.db                 SQLite：kv / candidates / deep_tasks / musts / quota /
 whale-audit.jsonl        追加式审计：wake / batch / screen / deep_track / judge /
                          must_produced / must_pushed / must_classified / clock_fire /
                          admin_must_added / admin_must_judged / tag_select / tag_reward ...
-diary/YYYY-MM.md         本地日记
+diary/YYYY-MM/M-D.md     本地日记（一天一个文件；周报 M-D~D.md）
 ```
 
 - SQLite 是主数据源；JSONL 用于外部审计/排查。

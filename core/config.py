@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from typing import Any
 
@@ -16,7 +16,9 @@ DEFAULTS: dict[str, Any] = {
     "bili_jct": "",
     "node_path": "",
     "gateway_cache": "",
-    "dsh_timeout_sec": 600,
+    "dsh_timeout_sec": 3600,
+    "deep_poll_interval_sec": 180,
+    "deep_poll_max": 20,
     "persona_id": "default",
     "provider_id": "",
     "clock_windows": "20:00-24:00",

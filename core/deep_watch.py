@@ -110,7 +110,40 @@ class DeepWatcher:
         return Path(raw).expanduser()
 
     def _timeout_sec(self) -> int:
-        return max(30, int(self.cfg.get("dsh_timeout_sec", 300) or 300))
+        # 整轮等待窗口：默认 60 分钟。一条 30 分钟的片子转录+抽帧要跑 20–35 分钟，
+        # 以前 600 秒就判超时，结果回来时任务早被标成 failed，没人去捞。
+        return max(60, int(self.cfg.get("dsh_timeout_sec", 3600) or 3600))
+
+    def _poll_interval(self) -> int:
+        return max(30, int(self.cfg.get("deep_poll_interval_sec", 180) or 180))
+
+    def _poll_max(self) -> int:
+        return max(1, int(self.cfg.get("deep_poll_max", 20) or 20))
+
+    @staticmethod
+    def _started_at(task: dict):
+        raw = str(task.get("deep_started_at") or "")
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw)
+        except Exception:
+            return None
+
+    def _poll_due(self, task: dict) -> tuple[bool, int, int]:
+        """这一轮该不该查：按「派单后每 N 秒查一次、最多 N 次」的节奏。
+
+        返回 (是否该查, 已查次数, 已等待秒数)。查不到的轮次也算一次，
+        所以总等待窗口 ≈ interval × max，默认 180s × 20 = 60 分钟。
+        """
+        attempts = int(task.get("attempts") or 0)
+        started = self._started_at(task)
+        if started is None:
+            return True, attempts, 0
+        age = (datetime.now(started.tzinfo) - started).total_seconds()
+        if attempts >= self._poll_max():
+            return False, attempts, int(age)
+        return age >= attempts * self._poll_interval(), attempts, int(age)
 
     async def poll_once(self) -> None:
         for task in self.db.running_deep_tasks():
@@ -119,6 +152,21 @@ class DeepWatcher:
             task_id = str(task.get("dsh_task_id") or "")
             if not task_id:
                 continue
+            due, attempts, age = self._poll_due(task)
+            if not due:
+                if attempts >= self._poll_max():
+                    self.plugin.logger.warning(
+                        f"[whale-sense] deep 任务查满 {attempts} 轮（约 {age // 60} 分钟）仍无结果，判失败 {task_id}"
+                    )
+                    self.db.update_deep_task(
+                        task_id,
+                        state="failed",
+                        deep_finished_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+                    )
+                continue
+            # 先记一次轮询，再去看文件：找不到也算查过一轮，避免 5 秒一次的循环把次数烧光
+            self.db.update_deep_task(task_id, attempts=attempts + 1)
+
             outbox = self._cache() / "outbox" / f"{task_id}.json"
             if not outbox.is_file():
                 # dsh_status 读取结果后会把 outbox/<id>.json 挪进 done/；两边都认。

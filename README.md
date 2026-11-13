@@ -488,7 +488,8 @@ node /path/to/bili-sense/bili-sense.mjs feed --json --n 5 --min-duration 180
 | `max_duration_sec`                      | 1800              | 最长时长（30 分钟），超过不进候选；0 = 不限 |
 | `bili_sessdata` / `bili_jct`            | 空                 | 分开填写的 B 站 cookie      |
 | `gateway_cache`                         | 空                 | gateway cache 目录      |
-| `dsh_timeout_sec`                       | 600               | DSH 深读超时              |
+| `dsh_timeout_sec`                       | 3600              | DSH 深读总等待窗口（60 分钟）    |
+| `deep_poll_interval_sec` / `deep_poll_max` | 180 / 20       | 3 分钟一轮、最多 20 轮        |
 | `clock_windows`                         | 20:00-24:00       | 作息窗口                  |
 | `clock_wakes`                           | 2                 | 每窗口最多醒几次              |
 | `skip_chance`                           | 0.3               | 本次不想看的概率              |

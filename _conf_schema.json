@@ -52,10 +52,22 @@
     "default": ""
   },
   "dsh_timeout_sec": {
-    "description": "DSH 深读任务超时秒数",
-    "hint": "视频下载/OCR/抽帧可能 5 分钟以上",
+    "description": "DSH 深读任务的总等待窗口（秒）",
+    "hint": "默认 3600（60 分钟）。一条 30 分钟的片子转录+抽帧要 20–35 分钟，以前 600 秒就判超时，结果回来时任务已被标 failed。改小会重演「结果白跑」。",
     "type": "int",
-    "default": 600
+    "default": 3600
+  },
+  "deep_poll_interval_sec": {
+    "description": "深读任务的轮询间隔（秒）",
+    "hint": "默认 180（3 分钟）。派单后每 3 分钟看一次 outbox，不查磁盘文件、只 stat 一个路径，开销可忽略。",
+    "type": "int",
+    "default": 180
+  },
+  "deep_poll_max": {
+    "description": "深读任务最多轮询几轮",
+    "hint": "默认 20。20 轮 × 3 分钟 = 60 分钟，与上面的总等待窗口对齐；查满仍无结果才判失败。",
+    "type": "int",
+    "default": 20
   },
   "node_path": {
     "description": "运行 bili-sense 的 node.exe 绝对路径",

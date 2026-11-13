@@ -33,6 +33,12 @@
     "type": "int",
     "default": 180
   },
+  "max_duration_sec": {
+    "description": "最长视频时长（秒），超过就不进候选",
+    "hint": "默认 1800（30 分钟）。深读一条 40 分钟以上的片子要跑三四十分钟，会把整轮的 dsh 超时（默认 600 秒）全部耗光。填 0 表示不限。",
+    "type": "int",
+    "default": 1800
+  },
   "bili_sessdata": {
     "description": "B 站 SESSDATA",
     "type": "string",

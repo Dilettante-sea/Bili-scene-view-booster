@@ -485,6 +485,7 @@ node /path/to/bili-sense/bili-sense.mjs feed --json --n 5 --min-duration 180
 | `node_path`                             | 空                 | node.exe；留空自动找        |
 | `feed_n`                                | 5                 | 每批候选数                 |
 | `min_duration_sec`                      | 180               | 最短时长，滤掉三分钟以下          |
+| `max_duration_sec`                      | 1800              | 最长时长（30 分钟），超过不进候选；0 = 不限 |
 | `bili_sessdata` / `bili_jct`            | 空                 | 分开填写的 B 站 cookie      |
 | `gateway_cache`                         | 空                 | gateway cache 目录      |
 | `dsh_timeout_sec`                       | 600               | DSH 深读超时              |

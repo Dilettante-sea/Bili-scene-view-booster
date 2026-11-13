@@ -11,6 +11,7 @@ DEFAULTS: dict[str, Any] = {
     "feed_cli": "",
     "feed_n": 5,
     "min_duration_sec": 180,
+    "max_duration_sec": 1800,
     "bili_sessdata": "",
     "bili_jct": "",
     "node_path": "",

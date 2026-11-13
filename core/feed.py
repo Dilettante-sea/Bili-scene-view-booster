@@ -74,18 +74,32 @@ async def fetch_candidates(plugin) -> dict[str, Any]:
         block = taste.block_list(plugin)
     except Exception:
         block = list(taste.DEFAULT_DISLIKE_TAGS)
+
+    # 时长上下限：0 表示该项不限。注意别写成 `int(x or 默认值)`，否则填 0（不限）会被顶回默认。
+    def _sec(key: str, fallback: int) -> int:
+        raw = plugin.cfg.get(key, fallback)
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            return fallback
+
+    min_sec = _sec("min_duration_sec", 180)
+    max_sec = _sec("max_duration_sec", 1800)
     args = [
         "feed",
         "--json",
         "--n",
         str(max(1, int(plugin.cfg.get("feed_n", 5) or 5))),
         "--min-duration",
-        str(max(0, int(plugin.cfg.get("min_duration_sec", 180) or 180))),
+        str(min_sec),
+        "--max-duration",
+        str(max_sec),
         "--like-tags",
         ",".join(queries),
         "--dislike-tags",
         ",".join(block),
     ]
+    plugin.logger.info(f"[whale-sense] 时长区间 {min_sec}s–{max_sec or '不限'}s")
     if seen:
         args += ["--seen", ",".join(seen[-200:])]
     plugin.logger.info(f"[whale-sense] 本轮搜索词：{queries}")

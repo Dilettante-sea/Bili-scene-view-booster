@@ -54,6 +54,7 @@
 ### 1.3 must 主/副队列
 
 - `tier=must` 进入主队列（`primary`）。
+- **积压降额**：主队列里还有 pending/pushing/pushed 的 must 时，当天产出上限从 must_per_day（默认 2）降到 must_backlog_per_day（默认 1）；超出的那条不丢，落到 secondary 队列排队，等主队列空了再推（事件 must_over_quota）。筛单提示里给助手的 must 产出 数字也走这个额度。
 - 一条 must 的完整状态机：
 
 ```text

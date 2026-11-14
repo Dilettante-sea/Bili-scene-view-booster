@@ -123,7 +123,8 @@ class Clock:
 
         for w in windows:
             key = f"{day}|{w['label']}"
-            if int(used.get(key, 0)) >= wakes:
+            used_n = int(used.get(key, 0))
+            if used_n >= wakes:
                 continue
             start_min = w["start"]
             end_min = w["end"]
@@ -134,12 +135,25 @@ class Clock:
             end_dt = day_start + timedelta(minutes=end_min)
             if end_dt <= now:
                 continue
-            earliest = max(now, start_dt)
+            # 把窗口按 clock_wakes 均分成 N 段，本轮只用第 used_n 段：
+            # 这样两次醒来会落在窗口的前半/后半，而不是两个点挤在窗口末尾。
+            seg_len = (end_dt - start_dt).total_seconds() / wakes
+            seg_start = start_dt + timedelta(seconds=seg_len * used_n)
+            seg_end = seg_start + timedelta(seconds=seg_len)
+
+            earliest = max(now, seg_start)
             if last_dt and earliest < last_dt + min_gap:
                 earliest = last_dt + min_gap
-            if earliest >= end_dt - timedelta(seconds=30):
+
+            if earliest >= seg_end - timedelta(seconds=30):
+                # 这一轮该在的那段已经过去（插件那会儿没在跑）：退化为在剩余窗口里随机
+                earliest = max(now, last_dt + min_gap if last_dt else now)
+                limit = end_dt
+            else:
+                limit = seg_end
+            if earliest >= limit - timedelta(seconds=30):
                 continue
-            span = (end_dt - earliest).total_seconds()
+            span = (limit - earliest).total_seconds()
             at = earliest + timedelta(seconds=random.random() * max(1, span))
             skip = random.random() < float(self.cfg.get("skip_chance", 0.3) or 0)
             return {
@@ -150,6 +164,13 @@ class Clock:
                 "at_text": at.strftime("%Y-%m-%d %H:%M"),
                 "skip": skip,
                 "created_at": now.isoformat(timespec="seconds"),
+                "slot": used_n,
+                "slot_range": [
+                    f"{int((seg_start - day_start).total_seconds() // 60) // 60:02d}:"
+                    f"{int((seg_start - day_start).total_seconds() // 60) % 60:02d}",
+                    f"{int((seg_end - day_start).total_seconds() // 60) // 60:02d}:"
+                    f"{int((seg_end - day_start).total_seconds() // 60) % 60:02d}",
+                ],
             }
         return None
 

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 import sqlite3
@@ -307,12 +307,22 @@ class DB:
             self.conn.commit()
 
     # ---- must queue ---------------------------------------------------
-    def add_must(self, must_id: str, bvid: str, memory_id: int, one_line: str, why: str, push_text: str = "") -> None:
+    def add_must(
+        self,
+        must_id: str,
+        bvid: str,
+        memory_id: int,
+        one_line: str,
+        why: str,
+        push_text: str = "",
+        queue: str = "primary",
+    ) -> None:
+        queue = "secondary" if str(queue) == "secondary" else "primary"
         with self._lock:
             self.conn.execute(
                 "INSERT INTO musts(id,bvid,memory_id,one_line,why,push_text,queue,state,attempts,discussion_status,produced_at) "
-                "VALUES(?,?,?,?,?,?, 'primary','pending',0,'pending',?)",
-                (must_id, bvid, int(memory_id or 0), one_line, why, push_text, now_iso()),
+                "VALUES(?,?,?,?,?,?, ?, 'pending',0,'pending',?)",
+                (must_id, bvid, int(memory_id or 0), one_line, why, push_text, queue, now_iso()),
             )
             self.conn.commit()
 

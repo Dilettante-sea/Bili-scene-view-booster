@@ -24,12 +24,27 @@ def production_quota(plugin) -> int:
     return max(1, int(plugin.cfg.get("must_per_day", 2) or 2))
 
 
-def enqueue(plugin, *, bvid: str, memory_id: int, one_line: str, why: str, push_text: str = "") -> dict[str, Any]:
+def remaining_today(plugin) -> int:
+    """今天还能产出几条 must（上限随积压变化：有余量时必须_per_day，积压时降到 backlog 值）。"""
+    produced = int(plugin.db.quota(today()).get("must_produced") or 0)
+    return max(0, production_quota(plugin) - produced)
+
+
+def enqueue(
+    plugin,
+    *,
+    bvid: str,
+    memory_id: int,
+    one_line: str,
+    why: str,
+    push_text: str = "",
+    queue: str = "primary",
+) -> dict[str, Any]:
     must_id = new_id()
-    plugin.db.add_must(must_id, bvid, int(memory_id or 0), one_line, why, push_text)
+    plugin.db.add_must(must_id, bvid, int(memory_id or 0), one_line, why, push_text, queue=queue)
     plugin.db.bump_quota(today(), "must_produced")
     plugin.db.add_event("must_produced", bvid=bvid, must_id=must_id, memory_id=memory_id)
-    return {"id": must_id, "bvid": bvid, "memory_id": int(memory_id or 0)}
+    return {"id": must_id, "bvid": bvid, "memory_id": int(memory_id or 0), "queue": queue}
 
 
 def classify(plugin, must_id: str, outcome: str, note: str = "") -> dict[str, Any]:

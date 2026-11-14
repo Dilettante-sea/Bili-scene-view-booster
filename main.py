@@ -181,23 +181,31 @@ class WhaleSensePlugin(Star):
         data = await fetch_candidates(self)
         candidates = data.get("candidates") or []
         min_duration = max(0, int(self.cfg.get("min_duration_sec", 180) or 180))
-        if min_duration > 0:
+        max_duration = max(0, int(self.cfg.get("max_duration_sec", 1800) or 1800))
+        if min_duration > 0 or max_duration > 0:
             before = len(candidates)
-            candidates = [
-                c for c in candidates
-                if int(c.get("duration") or 0) >= min_duration
-            ]
+
+            def _duration_ok(c: dict) -> bool:
+                seconds = int(c.get("duration") or 0)
+                if min_duration > 0 and seconds < min_duration:
+                    return False
+                if max_duration > 0 and seconds > max_duration:
+                    return False
+                return True
+
+            candidates = [c for c in candidates if _duration_ok(c)]
             if len(candidates) != before:
                 self.logger.info(
-                    f"[whale-sense] 时长过滤：{before} → {len(candidates)}（≥{min_duration}s）"
+                    f"[whale-sense] 时长过滤：{before} → {len(candidates)}"
+                    f"（{min_duration}s–{max_duration or '不限'}s）"
                 )
         if not candidates:
-            return f"bili-sense 没有返回 ≥{min_duration}s 的候选。"
+            return f"bili-sense 没有返回 {min_duration}s–{max_duration or '不限'}s 的候选。"
         batch_id = f"batch-{now_iso().replace(':', '').replace('-', '')[:15]}-{uuid.uuid4().hex[:4]}"
         self.db.add_candidates(batch_id, candidates)
         quota = {
             "deep_left": int(self.cfg.get("deep_per_day", 5) or 5),
-            "must_left": int(self.cfg.get("must_per_day", 2) or 2),
+            "must_left": must_mod.remaining_today(self),
         }
         prompt = screen_prompt(batch_id, candidates, quota)
         if dry or self.cfg.get("dry_run"):
@@ -376,7 +384,10 @@ class WhaleSensePlugin(Star):
         elif tier == "must":
             if not str(push_text or "").strip():
                 push_text = f"{one_line}\nhttps://www.bilibili.com/video/{bvid}"
+            # 今日额度：有积压时 production_quota 会降到 must_backlog_per_day（默认 1）。
+            # 超了不丢，落到 secondary 队列排队，等主队列空了再推。
             try:
+                queue = "primary" if must_mod.remaining_today(self) > 0 else "secondary"
                 item = must_mod.enqueue(
                     self,
                     bvid=bvid,
@@ -384,8 +395,14 @@ class WhaleSensePlugin(Star):
                     one_line=one_line,
                     why=why_deep or evaluation,
                     push_text=push_text,
+                    queue=queue,
                 )
                 must_id = item["id"]
+                if queue == "secondary":
+                    self.logger.info(
+                        f"[whale-sense] 今日 must 额度已满，{bvid} 落到 secondary 队列（{must_id}）"
+                    )
+                    self.db.add_event("must_over_quota", bvid=bvid, must_id=must_id)
             except Exception as exc:
                 self.logger.warning(f"[whale-sense] must 入队失败 {bvid}: {exc}")
 

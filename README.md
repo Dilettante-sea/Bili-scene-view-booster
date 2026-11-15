@@ -519,7 +519,7 @@ node /path/to/bili-sense/bili-sense.mjs feed --json --n 5 --min-duration 180
 | `idle_minutes`                          | 60                | 距助手最后一条消息多久才推 must    |
 | `max_shallow_attempts`                  | 3                 | 没聊透最多推几次              |
 | `diary_dir`                             | 空                 | 日记目录；空则 `插件目录/diary/YYYY-MM/M-D.md` |
-| `report_daily_at` / `report_weekly_at`  | 23:30 / Sun 21:00 | 报告时间                  |
+| `report_daily_at` / `report_weekly_at`  | 23:30 / Sun 21:00 | 报告时间；错过会补发最近一次（带 `[补发]` 前缀） |
 | `dry_run`                               | false             | 只审计/日记，不唤醒/不派单/不发送    |
 
 > 标签不再作为插件配置字段。Admin Like / Assistant Taste / Block 只在 `tags` 页面和 SQLite 中管理；页面保存后下一轮 feed 生效。

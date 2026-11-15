@@ -10,6 +10,7 @@ from astrbot.core.message.components import Plain
 from astrbot.core.message.message_event_result import MessageChain
 
 from . import diary as diary_mod
+from . import report_time
 
 
 def _today() -> str:
@@ -167,19 +168,31 @@ class ReportScheduler:
         if self.plugin.clock.paused():
             return
         now = datetime.now().astimezone()
+
         daily = _parse_hhmm(str(self.plugin.cfg.get("report_daily_at", "23:30")))
         if daily:
-            target = now.replace(hour=daily[0], minute=daily[1], second=0, microsecond=0)
-            today = now.date().isoformat()
-            if now >= target and self.plugin.db.get_kv("last_report_daily") != today:
-                text = daily_text(self.plugin)
-                ok = await send_report(self.plugin, text)
-                if ok:
-                    try:
-                        diary_mod.append_report(self.plugin, "日报", text)
-                    except Exception as exc:
-                        self.plugin.logger.warning(f"[whale-sense] 写日报文件失败: {exc}")
-                    self.plugin.db.set_kv("last_report_daily", today)
+            last = str(self.plugin.db.get_kv("last_report_daily") or "")
+            day, catchup = report_time.daily_due(now, daily[0], daily[1], last)
+            if day is not None:
+                day_key = day.isoformat()
+                if catchup and not self._day_has_data(day_key):
+                    # 补发日没有数据：不刷屏，直接记账
+                    self.plugin.db.set_kv("last_report_daily", day_key)
+                    self.plugin.logger.info(f"[whale-sense] 补发日报：{day_key} 无数据，跳过")
+                else:
+                    text = daily_text(self.plugin, day_key)
+                    if catchup:
+                        text = f"[补发] {text}"
+                    ok = await send_report(self.plugin, text)
+                    if ok:
+                        try:
+                            diary_mod.append_report(self.plugin, "日报", text)
+                        except Exception as exc:
+                            self.plugin.logger.warning(f"[whale-sense] 写日报文件失败: {exc}")
+                        self.plugin.db.set_kv("last_report_daily", day_key)
+                        if catchup:
+                            self.plugin.logger.info(f"[whale-sense] 已补发 {day_key} 的日报")
+
         weekly_raw = str(self.plugin.cfg.get("report_weekly_at", "Sun 21:00"))
         try:
             weekday_s, time_s = weekly_raw.split()
@@ -187,14 +200,15 @@ class ReportScheduler:
             hh, mm = _parse_hhmm(time_s) or (21, 0)
         except Exception:
             target_wd, hh, mm = 6, 21, 0
-        target = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
-        week = f"{now.isocalendar().year}-{now.isocalendar().week}"
-        if now.weekday() == target_wd and now >= target and self.plugin.db.get_kv("last_report_weekly") != week:
+        target_dt, week, catchup = report_time.weekly_due(now, target_wd, hh, mm)
+        if now >= target_dt and self.plugin.db.get_kv("last_report_weekly") != week:
             text = weekly_text(self.plugin)
+            if catchup:
+                text = f"[补发] {text}"
             ok = await send_report(self.plugin, text)
             if ok:
                 try:
-                    end_day = now.date()
+                    end_day = target_dt.date()
                     diary_mod.append_report(
                         self.plugin,
                         "周报",
@@ -204,3 +218,19 @@ class ReportScheduler:
                 except Exception as exc:
                     self.plugin.logger.warning(f"[whale-sense] 写周报文件失败: {exc}")
                 self.plugin.db.set_kv("last_report_weekly", week)
+                if catchup:
+                    self.plugin.logger.info(f"[whale-sense] 已补发 {week} 的周报")
+
+    def _day_has_data(self, day: str) -> bool:
+        """补发前先看那天有没有东西，避免补一条「候选 0 / must 0」的空报告。"""
+        try:
+            for table, column in (
+                ("candidates", "created_at"),
+                ("deep_tasks", "deep_started_at"),
+                ("musts", "produced_at"),
+            ):
+                if self.plugin.db.count(table, f"{column} LIKE ?", (f"{day}%",)) > 0:
+                    return True
+        except Exception:
+            return True
+        return False

@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 import sqlite3
@@ -134,6 +134,18 @@ CREATE TABLE IF NOT EXISTS tag_audit (
   must_id TEXT,
   reason TEXT
 );
+
+CREATE TABLE IF NOT EXISTS backlog (
+  id TEXT PRIMARY KEY,
+  bvid TEXT NOT NULL,
+  title TEXT,
+  source TEXT NOT NULL,
+  one_line TEXT,
+  why TEXT,
+  created_at TEXT NOT NULL,
+  state TEXT NOT NULL DEFAULT 'queued',
+  closed_at TEXT
+);
 """
 
 
@@ -176,6 +188,11 @@ class DB:
                 self.conn.execute("ALTER TABLE deep_tasks ADD COLUMN origin TEXT DEFAULT 'auto'")
             if "wake_umo" not in deep_cols:
                 self.conn.execute("ALTER TABLE deep_tasks ADD COLUMN wake_umo TEXT")
+            if "mode" not in deep_cols:
+                self.conn.execute("ALTER TABLE deep_tasks ADD COLUMN mode TEXT NOT NULL DEFAULT 'full'")
+            quota_cols = {r["name"] for r in self.conn.execute("PRAGMA table_info(quota)")}
+            if "light_used" not in quota_cols:
+                self.conn.execute("ALTER TABLE quota ADD COLUMN light_used INTEGER NOT NULL DEFAULT 0")
             self.conn.commit()
 
     def close(self) -> None:
@@ -316,13 +333,15 @@ class DB:
         why: str,
         push_text: str = "",
         queue: str = "primary",
+        source: str = "deep",
     ) -> None:
         queue = "secondary" if str(queue) == "secondary" else "primary"
+        source = str(source) if str(source) in {"deep", "light", "admin", "auto"} else "deep"
         with self._lock:
             self.conn.execute(
-                "INSERT INTO musts(id,bvid,memory_id,one_line,why,push_text,queue,state,attempts,discussion_status,produced_at) "
-                "VALUES(?,?,?,?,?,?, ?, 'pending',0,'pending',?)",
-                (must_id, bvid, int(memory_id or 0), one_line, why, push_text, queue, now_iso()),
+                "INSERT INTO musts(id,bvid,memory_id,one_line,why,push_text,source,queue,state,attempts,discussion_status,produced_at) "
+                "VALUES(?,?,?,?,?,?,?, ?, 'pending',0,'pending',?)",
+                (must_id, bvid, int(memory_id or 0), one_line, why, push_text, source, queue, now_iso()),
             )
             self.conn.commit()
 
@@ -463,7 +482,7 @@ class DB:
         return self._quota_row(date)
 
     def bump_quota(self, date: str, field: str, amount: int = 1) -> int:
-        if field not in {"deep_used", "must_produced", "maybe_shared"}:
+        if field not in {"deep_used", "must_produced", "maybe_shared", "light_used"}:
             raise ValueError("unknown quota field")
         self._quota_row(date)
         with self._lock:
@@ -471,6 +490,61 @@ class DB:
             self.conn.commit()
             row = self.conn.execute("SELECT * FROM quota WHERE date=?", (date,)).fetchone()
         return int(row[field]) if row else 0
+
+    # ---- backlog（攒着、等管理员问起才出）-----------------------------
+    def add_backlog(
+        self,
+        bid: str,
+        bvid: str,
+        title: str,
+        source: str,
+        one_line: str,
+        why: str,
+        limit: int = 10,
+    ) -> None:
+        now = now_iso()
+        keep = int(max(1, limit))
+        with self._lock:
+            self.conn.execute(
+                "INSERT INTO backlog(id,bvid,title,source,one_line,why,created_at,state) "
+                "VALUES(?,?,?,?,?,?,?,'queued')",
+                (bid, bvid, title or bvid, source, one_line, why, now),
+            )
+            # 只保留最新 keep 条在队里，更早的标 dropped（留档，不删）
+            self.conn.execute(
+                "UPDATE backlog SET state='dropped', closed_at=? WHERE state='queued' AND id NOT IN "
+                "(SELECT id FROM backlog WHERE state='queued' ORDER BY created_at DESC, rowid DESC LIMIT ?)",
+                (now, keep),
+            )
+            self.conn.commit()
+
+    def list_backlog(self, limit: int = 10) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM backlog WHERE state='queued' "
+                "ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                (int(max(1, limit)),),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_backlog(self, bid: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute("SELECT * FROM backlog WHERE id=?", (str(bid),)).fetchone()
+        return dict(row) if row else None
+
+    def close_backlog(self, bid: str, state: str = "promoted") -> None:
+        state = state if state in {"promoted", "dropped"} else "dropped"
+        with self._lock:
+            self.conn.execute(
+                "UPDATE backlog SET state=?, closed_at=? WHERE id=? AND state='queued'",
+                (state, now_iso(), str(bid)),
+            )
+            self.conn.commit()
+
+    def count_backlog(self, state: str = "queued") -> int:
+        with self._lock:
+            row = self.conn.execute("SELECT COUNT(*) FROM backlog WHERE state=?", (state,)).fetchone()
+        return int(row[0]) if row else 0
 
     def add_deep_task(
         self,
@@ -481,11 +555,13 @@ class DB:
         must_id: str = "",
         origin: str = "auto",
         wake_umo: str = "",
+        mode: str = "full",
     ) -> None:
+        mode = "light" if str(mode) == "light" else "full"
         with self._lock:
             self.conn.execute(
-                "INSERT INTO deep_tasks(bvid,batch_id,dsh_task_id,state,hypothesis,must_id,origin,wake_umo,deep_started_at,created_at) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO deep_tasks(bvid,batch_id,dsh_task_id,state,hypothesis,must_id,origin,wake_umo,mode,deep_started_at,created_at) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     bvid,
                     batch_id,
@@ -495,11 +571,19 @@ class DB:
                     must_id or None,
                     origin,
                     wake_umo,
+                    mode,
                     now_iso(),
                     now_iso(),
                 ),
             )
             self.conn.commit()
+
+    def deep_task_for(self, bvid: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT * FROM deep_tasks WHERE bvid=? ORDER BY id DESC LIMIT 1", (str(bvid),)
+            ).fetchone()
+        return dict(row) if row else None
 
     def update_deep_task(self, dsh_task_id: str, **fields: Any) -> None:
         allowed = {"state", "attempts", "deep_finished_at", "artifacts_json", "hypothesis"}

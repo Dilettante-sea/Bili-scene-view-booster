@@ -24,10 +24,11 @@ from .core.db import DB, now_iso
 from .core.deep_watch import DeepWatcher
 from .core.diary import append_entry
 from .core.feed import fetch_candidates, fetch_meta
+from .core import backlog as backlog_mod
 from .core import must as must_mod
 from .core import taste
 from .core.must_loop import MustDispatcher
-from .core.prompts import deep_dispatch_content, screen_prompt
+from .core.prompts import deep_dispatch_content, light_dispatch_content, screen_prompt
 from .core.report import ReportScheduler, daily_text, send_report
 from .core.tools import TOOL_CLASSES
 from .core.wake import wake_session
@@ -203,9 +204,13 @@ class WhaleSensePlugin(Star):
             return f"bili-sense 没有返回 {min_duration}s–{max_duration or '不限'}s 的候选。"
         batch_id = f"batch-{now_iso().replace(':', '').replace('-', '')[:15]}-{uuid.uuid4().hex[:4]}"
         self.db.add_candidates(batch_id, candidates)
+        caps = must_mod.caps(self)
         quota = {
             "deep_left": int(self.cfg.get("deep_per_day", 5) or 5),
-            "must_left": must_mod.remaining_today(self),
+            "deep_must_cap": caps.get("deep", 0),
+            "light_must_cap": caps.get("light", 0),
+            "deep_must_used": must_mod.produced_today(self, "deep"),
+            "light_must_used": must_mod.produced_today(self, "light"),
         }
         prompt = screen_prompt(batch_id, candidates, quota)
         if dry or self.cfg.get("dry_run"):
@@ -238,16 +243,48 @@ class WhaleSensePlugin(Star):
             if screen == "deep":
                 deep.append({"bvid": bvid, "content": deep_dispatch_content(bvid, hypothesis)})
         self.db.add_event("screen", batch_id=batch_id, counts=counts)
-        return json.dumps(
-            {
-                "ok": True,
-                "batch_id": batch_id,
-                "counts": counts,
-                "deep": deep,
-                "next": "对每个 deep：调 dsh_dispatch(content=上面给出的 content)，再调 whale_track_deep(task_id, bvid, hypothesis)。",
-            },
-            ensure_ascii=False,
-        )
+
+        # 轻读清单：maybe 里挑最多 light_per_wake 条，交给助手走 dsh_dispatch(mode=light)
+        light: list[dict] = []
+        if self.cfg.get("light_enabled") and counts.get("maybe"):
+            try:
+                per_day = max(0, int(self.cfg.get("light_per_day", 2) or 0))
+                used = int(self.db.quota(must_mod.today()).get("light_used") or 0)
+                quota_left = max(0, per_day - used)
+                per_wake = max(0, int(self.cfg.get("light_per_wake", 1) or 0))
+                take = min(quota_left, per_wake)
+                if take > 0:
+                    for row in self.db.candidates_by_batch(batch_id):
+                        if str(row.get("screen")) != "maybe" or len(light) >= take:
+                            continue
+                        light.append(
+                            {
+                                "bvid": row["bvid"],
+                                "title": row.get("title"),
+                                "one_line": row.get("one_line"),
+                                "hypothesis": row.get("hypothesis") or row.get("reason") or "",
+                                "content": light_dispatch_content(
+                                    row["bvid"], row.get("hypothesis") or row.get("reason") or ""
+                                ),
+                            }
+                        )
+            except Exception as exc:
+                self.logger.warning(f"[whale-sense] 生成轻读清单失败: {exc}")
+
+        payload = {
+            "ok": True,
+            "batch_id": batch_id,
+            "counts": counts,
+            "deep": deep,
+            "next": "对每个 deep：调 dsh_dispatch(content=上面给出的 content)，再调 whale_track_deep(task_id, bvid, hypothesis)。",
+        }
+        if light:
+            payload["light"] = light
+            payload["next_light"] = (
+                "对 light 里的每条：调 dsh_dispatch(content=该条的 content)，"
+                '再调 whale_track_deep(task_id, bvid, hypothesis, mode="light")。'
+            )
+        return json.dumps(payload, ensure_ascii=False)
 
     async def handle_add_must(self, event, url_or_bvid: str, note: str = "") -> str:
         if not self._validate_admin(event):
@@ -292,7 +329,13 @@ class WhaleSensePlugin(Star):
         )
 
     async def handle_track_deep(
-        self, event, task_id: str, bvid: str, hypothesis: str = "", must_id: str = ""
+        self,
+        event,
+        task_id: str,
+        bvid: str,
+        hypothesis: str = "",
+        must_id: str = "",
+        mode: str = "full",
     ) -> str:
         umo = str(getattr(event, "unified_msg_origin", "") or "")
         is_work = umo == self.cfg.work_umo
@@ -306,6 +349,7 @@ class WhaleSensePlugin(Star):
         candidate = self.db.candidate(bvid) or {}
         origin = "admin_chat" if is_admin and admin_must else "auto"
         wake_umo = self.cfg.admin_umo if origin == "admin_chat" else self.cfg.work_umo
+        mode = "light" if str(mode) == "light" else "full"
         self.db.add_deep_task(
             bvid,
             task_id,
@@ -314,13 +358,20 @@ class WhaleSensePlugin(Star):
             must_id=must_id,
             origin=origin,
             wake_umo=wake_umo,
+            mode=mode,
         )
         if admin_must:
             self.db.update_must(must_id, state="admin_reading")
         self.db.add_event(
-            "deep_track", bvid=bvid, task_id=task_id, must_id=must_id or None, origin=origin
+            "deep_track",
+            bvid=bvid,
+            task_id=task_id,
+            must_id=must_id or None,
+            origin=origin,
+            payload_json=json.dumps({"mode": mode}, ensure_ascii=False),
         )
-        return f"已登记 deep 任务 {task_id}（{bvid}，{origin}）；插件会轮询 outbox，结果回来后唤醒对应会话终评。"
+        label = "轻读" if mode == "light" else "深读"
+        return f"已登记{label}任务 {task_id}（{bvid}，{origin}）；插件会轮询 outbox，结果回来后唤醒对应会话终评。"
 
     async def handle_judge_result(
         self,
@@ -346,19 +397,25 @@ class WhaleSensePlugin(Star):
             if not is_admin or not admin_must:
                 return "错误：whale_judge_result 只接受 work，或 admin 会话里的管理员 must。"
         tier = str(tier or "").lower()
-        if tier not in {"must", "maybe", "no"}:
-            return "错误：tier 必须是 must/maybe/no。"
+        if tier == "maybe":  # 兼容旧提示词里的旧枚举
+            tier = "backlog"
+        if tier not in {"must", "backlog", "no"}:
+            return "错误：tier 必须是 must/backlog/no。"
+        task_row = self.db.deep_task_for(bvid) or {}
+        mode = "light" if str(task_row.get("mode")) == "light" else "full"
+        source = "light" if mode == "light" else "deep"
+        diary_tier = "light-no" if (mode == "light" and tier == "no") else tier
+        candidate = self.db.candidate(bvid) or {}
+        title = str(candidate.get("title") or bvid)
         self.db.update_deep_by_bvid(bvid, state="done", deep_finished_at=now_iso())
         if not admin_must:
             self.db.bump_quota(must_mod.today(), "deep_used")
-        candidate = self.db.candidate(bvid) or {}
         try:
-            title = str(candidate.get("title") or bvid)
             tags = json.loads(candidate.get("tags_json") or "[]")
             append_entry(
                 self,
                 bvid=bvid,
-                tier=tier,
+                tier=diary_tier,
                 title=title,
                 tags=tags,
                 one_line=one_line,
@@ -384,34 +441,60 @@ class WhaleSensePlugin(Star):
         elif tier == "must":
             if not str(push_text or "").strip():
                 push_text = f"{one_line}\nhttps://www.bilibili.com/video/{bvid}"
-            # 今日额度：有积压时 production_quota 会降到 must_backlog_per_day（默认 1）。
-            # 超了不丢，落到 secondary 队列排队，等主队列空了再推。
             try:
-                queue = "primary" if must_mod.remaining_today(self) > 0 else "secondary"
-                item = must_mod.enqueue(
-                    self,
-                    bvid=bvid,
-                    memory_id=int(memory_id or 0),
-                    one_line=one_line,
-                    why=why_deep or evaluation,
-                    push_text=push_text,
-                    queue=queue,
-                )
-                must_id = item["id"]
-                if queue == "secondary":
-                    self.logger.info(
-                        f"[whale-sense] 今日 must 额度已满，{bvid} 落到 secondary 队列（{must_id}）"
+                # 今日额度按来源分：deep 2 / light 1（有积压时 deep 1、light 0）
+                if must_mod.remaining_today(self, source) > 0:
+                    item = must_mod.enqueue(
+                        self,
+                        bvid=bvid,
+                        memory_id=int(memory_id or 0),
+                        one_line=one_line,
+                        why=why_deep or evaluation,
+                        push_text=push_text,
+                        queue="primary",
+                        source=source,
                     )
-                    self.db.add_event("must_over_quota", bvid=bvid, must_id=must_id)
+                    must_id = item["id"]
+                else:
+                    # 额度已满：不丢，转「攒着」队列
+                    caps = must_mod.caps(self)
+                    info = backlog_mod.enqueue(
+                        self,
+                        bvid=bvid,
+                        title=title,
+                        source=("maybe-light" if source == "light" else "deep"),
+                        one_line=one_line,
+                        why=f"{why_deep or evaluation}（原判 must，但今日 {source} 额度已满 {caps.get(source)} 条）",
+                    )
+                    must_id = ""
+                    self.db.add_event("must_over_quota", bvid=bvid, must_id=info["id"])
+                    self.logger.info(
+                        f"[whale-sense] 今日 {source} must 额度已满，{bvid} 转入 backlog（{info['id']}）"
+                    )
             except Exception as exc:
                 self.logger.warning(f"[whale-sense] must 入队失败 {bvid}: {exc}")
+        elif tier == "backlog":
+            try:
+                info = backlog_mod.enqueue(
+                    self,
+                    bvid=bvid,
+                    title=title,
+                    source=("maybe-light" if source == "light" else "deep"),
+                    one_line=one_line,
+                    why=why_deep or evaluation,
+                )
+                self.logger.info(
+                    f"[whale-sense] {bvid} 进 backlog（{info['id']}，{info['size']}/{info['cap']}）"
+                )
+            except Exception as exc:
+                self.logger.warning(f"[whale-sense] backlog 入队失败 {bvid}: {exc}")
 
         try:
             taste.record_reward(
                 self,
                 bvid,
                 f"judge_{tier}",
-                {"must": 0.3, "maybe": 0.1, "no": -0.5}.get(tier, 0.0),
+                {"must": 0.3, "backlog": 0.15, "no": -0.5}.get(tier, 0.0),
                 taste_tags=taste_tags,
             )
         except Exception as exc:
@@ -428,6 +511,7 @@ class WhaleSensePlugin(Star):
             key_moments=key_moments or [],
             must_id=must_id or None,
             source="admin" if admin_must else "auto",
+            payload_json=json.dumps({"mode": mode}, ensure_ascii=False),
         )
         return json.dumps(
             {
@@ -440,6 +524,43 @@ class WhaleSensePlugin(Star):
             },
             ensure_ascii=False,
         )
+
+    # ---- backlog（攒着，只在管理员问起时出）---------------------------
+    async def handle_backlog_list(self, event, limit: int = 10) -> str:
+        if not self._validate_admin(event):
+            return "错误：whale_backlog_list 只接受管理员私聊会话。"
+        rows = backlog_mod.listing(self, limit)
+        if not rows:
+            return "攒着的队列是空的。"
+        lines = [f"攒着 {len(rows)} 条（上限 {backlog_mod.cap(self)}，只显示最新的）："]
+        for row in rows:
+            lines.append(
+                f"{row['n']}. [{row['id']}] {row.get('title') or row['bvid']}"
+                f"（{row.get('source')}）"
+            )
+            if row.get("one_line"):
+                lines.append(f"   {row['one_line']}")
+            lines.append(f"   https://www.bilibili.com/video/{row['bvid']}")
+        return "\n".join(lines)
+
+    async def handle_backlog_promote(self, event, bid: str) -> str:
+        if not self._validate_admin(event):
+            return "错误：whale_backlog_promote 只接受管理员私聊会话。"
+        result = backlog_mod.promote(self, bid)
+        if not result.get("ok"):
+            return f"没能升级：{result.get('error')}"
+        return (
+            f"已升级为 must（{result['must_id']}，来源 {result['source']}），"
+            "按 must 的节奏推给他。"
+        )
+
+    async def handle_backlog_drop(self, event, bid: str) -> str:
+        if not self._validate_admin(event):
+            return "错误：whale_backlog_drop 只接受管理员私聊会话。"
+        result = backlog_mod.drop(self, bid)
+        if not result.get("ok"):
+            return f"没找到：{result.get('error')}"
+        return f"已从攒着队列里丢掉 {result['bvid']}。"
 
     # ---- M3 must / recall tools ---------------------------------------
     def _validate_admin(self, event) -> bool:

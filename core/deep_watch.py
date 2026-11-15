@@ -187,14 +187,29 @@ class DeepWatcher:
                 self.plugin.logger.warning(f"[whale-sense] outbox {task_id} 没有 JSON 结果")
                 self.db.update_deep_task(task_id, state="failed", deep_finished_at=datetime.now().astimezone().isoformat(timespec="seconds"))
                 continue
+            mode = "light" if str(task.get("mode")) == "light" else "full"
             bvid = str(payload.get("bvid") or task.get("bvid") or "")
             transcript = str(payload.get("transcript") or "")
             keyframes = _normalize_frames(payload.get("keyframes"))
+            if mode == "light" and not transcript.strip():
+                # 轻读只认文字：无对白/无文本就没必要再唤醒终评，直接判 no（日记留一行）
+                self.plugin.logger.info(f"[whale-sense] {bvid} 轻读无可识别文本，按 no 记账")
+                self.db.update_deep_task(
+                    task_id,
+                    state="done",
+                    deep_finished_at=datetime.now().astimezone().isoformat(timespec="seconds"),
+                    artifacts_json=json.dumps(
+                        {"bvid": bvid, "transcript": "", "transcript_source": "none"}, ensure_ascii=False
+                    ),
+                )
+                self.db.add_event("light_empty", bvid=bvid, payload_json=json.dumps({"mode": mode}))
+                continue
             if not transcript.strip() and not keyframes:
                 self.plugin.logger.warning(f"[whale-sense] {bvid} 既无转录也无关键帧，无法终评")
                 self.db.update_deep_task(task_id, state="failed", deep_finished_at=datetime.now().astimezone().isoformat(timespec="seconds"))
                 continue
             artifacts = {
+                "mode": mode,
                 "bvid": bvid,
                 "transcript": transcript,
                 "transcript_source": payload.get("transcript_source"),
@@ -219,8 +234,12 @@ class DeepWatcher:
                 "stats": json.loads(meta_row.get("stats_json") or "{}"),
             }
             is_admin = str(task.get("origin") or "") == "admin_chat"
-            note = judge_prompt(task, meta, transcript, keyframes, admin=is_admin)
-            images = [k["path"] for k in keyframes if Path(k["path"]).is_file()][:6]
+            note = judge_prompt(task, meta, transcript, keyframes, admin=is_admin, mode=mode)
+            images = (
+                []
+                if mode == "light"
+                else [k["path"] for k in keyframes if Path(k["path"]).is_file()][:6]
+            )
             wake_umo = str(task.get("wake_umo") or "")
             if not wake_umo:
                 wake_umo = self.plugin.cfg.admin_umo if is_admin else self.plugin.cfg.work_umo

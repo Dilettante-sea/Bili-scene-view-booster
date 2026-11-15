@@ -77,10 +77,17 @@ def append_entry(
             if moments:
                 chunks.append("\n关键瞬间：\n" + "\n".join(f"- {m}" for m in moments) + "\n")
             chunks.append(f"\n来源：https://www.bilibili.com/video/{bvid}\n")
-        elif tier == "maybe":
-            if "### 略看（maybe）" not in text:
-                chunks.append("\n### 略看（maybe）\n")
-            chunks.append(f"- {hhmm} 《{title}》{bvid} —— {one_line}。标签：{tags_text}\n")
+        elif tier == "backlog":
+            if "### 攒着（backlog）" not in text:
+                chunks.append("\n### 攒着（backlog）\n")
+            chunks.append(
+                f"- {hhmm} 《{title}》{bvid} —— {one_line}。为什么攒着：{body}。标签：{tags_text}\n"
+            )
+        elif tier in {"maybe", "light-no"}:
+            head = "### 轻读后没采纳（light-no）" if tier == "light-no" else "### 略看（maybe）"
+            if head not in text:
+                chunks.append(f"\n{head}\n")
+            chunks.append(f"- {hhmm} 《{title}》{bvid} —— {body or one_line}。标签：{tags_text}\n")
         else:
             if "### 深读后没采纳（deep-no）" not in text:
                 chunks.append("\n### 深读后没采纳（deep-no）\n")

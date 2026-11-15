@@ -51,10 +51,23 @@
   - `must / maybe / no`；
   - 先调 `memorize_long_term_memory`，再调 `whale_judge_result`。
 
-### 1.3 must 主/副队列
+### 1.3 三个终态：no / backlog / must
 
-- `tier=must` 进入主队列（`primary`）。
-- **积压降额**：主队列里还有 pending/pushing/pushed 的 must 时，当天产出上限从 must_per_day（默认 2）降到 must_backlog_per_day（默认 1）；超出的那条不丢，落到 secondary 队列排队，等主队列空了再推（事件 must_over_quota）。筛单提示里给助手的 must 产出 数字也走这个额度。
+初筛给出 `no / maybe / deep`，复查（maybe 走轻读、deep 走深读）之后只落三种终态：
+
+| 初筛 | 复查 | 终态 | 存哪 | 什么时候出现 |
+|---|---|---|---|---|
+| no | — | no | 不存队列 | 永不 |
+| maybe | 轻读（只读字幕） | maybe-no | 不存队列（日记留一行原因） | 永不 |
+| maybe | 轻读 | maybe-backlog | `backlog` 表 | 只在管理员问起时 |
+| maybe | 轻读 | maybe-must | `musts` 表 | 按 must 额度主动推 |
+| deep | 深读（转录+图） | deep-no | 不存队列（日记「深读后没采纳」） | 永不 |
+| deep | 深读 | deep-backlog | `backlog` 表 | 只在管理员问起时 |
+| deep | 深读 | deep-must | `musts` 表 | 按 must 额度主动推 |
+
+- **backlog（攒着）**：有价值但不必现在说。上限 `backlog_max`（默认 10），先进先出，满了挤掉最旧（标 dropped 留档）；**插件从不主动推**，只有管理员问起时助手才调 `whale_backlog_list` 列出最新 10 条，说“这条给我看看”则 `whale_backlog_promote` 升级成 must，"不要了"则 `whale_backlog_drop`。
+- **must 额度按来源分**：无积压时 deep-must 2 条 + maybe-must 1 条（合计 3）；主队列里还有 pending/pushing/pushed 时降为 deep-must 1 条、maybe-must 0 条。额度满了不丢，转进 backlog（事件 `must_over_quota`）。
+- `tier=must` 进入主队列（`primary`）；副队列（`secondary`）只留给「没聊透」的 must 回炉。
 - 一条 must 的完整状态机：
 
 ```text
@@ -498,7 +511,11 @@ node /path/to/bili-sense/bili-sense.mjs feed --json --n 5 --min-duration 180
 | `min_gap_min`                           | 10                | 两次唤醒最小间隔              |
 | `quiet_hours`                           | 00:00-08:00       | 不推 must               |
 | `deep_per_day` / `deep_per_wake`        | 5 / 3             | deep 配额（提示+统计）        |
-| `must_per_day` / `must_backlog_per_day` | 2 / 1             | must 产出配额（提示+统计）      |
+| `must_per_day` / `must_backlog_per_day` | 2 / 1             | deep-must 配额（无积压 / 有积压） |
+| `maybe_must_per_day`                    | 1                 | maybe-must 配额（仅在无积压时生效） |
+| `light_enabled`                         | false             | maybe 是否走「只读字幕」轻读      |
+| `light_per_wake` / `light_per_day`      | 1 / 2             | 每批 / 每天最多轻读几条           |
+| `backlog_max`                           | 10                | 「攒着」队列上限，FIFO 挤最旧       |
 | `idle_minutes`                          | 60                | 距助手最后一条消息多久才推 must    |
 | `max_shallow_attempts`                  | 3                 | 没聊透最多推几次              |
 | `diary_dir`                             | 空                 | 日记目录；空则 `插件目录/diary/YYYY-MM/M-D.md` |

@@ -131,17 +131,14 @@
     "default": 3
   },
   "must_per_day": {
-    "description": "每天最多产出几条 must（正常日）",
+    "description": "每天最多产出几条 deep-must（无积压时）",
+    "hint": "无积压：deep-must 2 + maybe-must 1 = 3；有积压：deep-must 1、maybe-must 0。",
     "type": "int",
     "default": 2
   },
   "must_backlog_per_day": {
-    "description": "有主队列积压的次日，must 产出额降为几条",
-    "type": "int",
-    "default": 1
-  },
-  "maybe_per_day": {
-    "description": "每天最多分享几条 maybe",
+    "description": "有积压时，每天最多产出几条 deep-must",
+    "hint": "主队列还有 pending/pushing/pushed 的 must 时生效，默认 1；此时不再产出 maybe-must。",
     "type": "int",
     "default": 1
   },
@@ -175,5 +172,33 @@
     "description": "试运行：只写审计/日记，不派单、不写记忆、不发送",
     "type": "bool",
     "default": false
+  },
+  "maybe_must_per_day": {
+    "description": "每天最多产出几条 maybe-must（仅无积压时生效）",
+    "hint": "轻读（只看字幕）判出来的 must 走这个额度；有积压时自动归零。",
+    "type": "int",
+    "default": 1
+  },
+  "light_enabled": {
+    "description": "初筛 maybe 是否走「只读字幕」的轻读复核",
+    "hint": "关（默认）：maybe 直接丢弃，与改动前一致。开：挑少量 maybe 派 DSH 轻读，成本约为深读的 1/3。",
+    "type": "bool",
+    "default": false
+  },
+  "light_per_wake": {
+    "description": "每批最多挑几条 maybe 去轻读",
+    "type": "int",
+    "default": 1
+  },
+  "light_per_day": {
+    "description": "每天最多轻读几条",
+    "type": "int",
+    "default": 2
+  },
+  "backlog_max": {
+    "description": "「攒着」队列上限（先进先出，满了挤掉最旧的）",
+    "hint": "只在管理员问起时列出最新的这些条；插件从不主动推。",
+    "type": "int",
+    "default": 10
   }
 }

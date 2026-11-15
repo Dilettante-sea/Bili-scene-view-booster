@@ -61,13 +61,27 @@ class WhaleTrackDeepTool(FunctionTool):
                 "bvid": {"type": "string"},
                 "hypothesis": {"type": "string"},
                 "must_id": {"type": "string", "description": "管理员主动视频的 must_id；普通自动 deep 留空。"},
+                "mode": {
+                    "type": "string",
+                    "enum": ["full", "light"],
+                    "default": "full",
+                    "description": "full=转录+关键帧；light=只读字幕（maybe 复核用，约 1/3 成本）。",
+                },
             },
             "required": ["task_id", "bvid"],
         }
     )
 
-    async def run(self, event, task_id: str, bvid: str, hypothesis: str = "", must_id: str = "") -> str:
-        return await self.plugin.handle_track_deep(event, task_id, bvid, hypothesis, must_id)
+    async def run(
+        self,
+        event,
+        task_id: str,
+        bvid: str,
+        hypothesis: str = "",
+        must_id: str = "",
+        mode: str = "full",
+    ) -> str:
+        return await self.plugin.handle_track_deep(event, task_id, bvid, hypothesis, must_id, mode)
 
 
 @dataclass
@@ -76,15 +90,16 @@ class WhaleJudgeResultTool(FunctionTool):
 
     name: str = "whale_judge_result"
     description: str = (
-        "提交一条深读视频的终评。只接受内部 work 会话。"
-        "tier 为 must/maybe/no；memory_id 是 memorize_long_term_memory 返回的 id（失败填 0）。"
+        "提交一条视频的终评。只接受内部 work 会话。"
+        "tier 为 must/backlog/no：must=现在就说；backlog=有价值但攒着等他问；no=没价值。"
+        "memory_id 是 memorize_long_term_memory 返回的 id（失败填 0）。"
     )
     parameters: dict = field(
         default_factory=lambda: {
             "type": "object",
             "properties": {
                 "bvid": {"type": "string"},
-                "tier": {"type": "string", "enum": ["must", "maybe", "no"]},
+                "tier": {"type": "string", "enum": ["must", "backlog", "no"]},
                 "one_line": {"type": "string"},
                 "evaluation": {"type": "string"},
                 "key_moments": {"type": "array", "items": {"type": "string"}},
@@ -265,6 +280,67 @@ class WhaleAddMustTool(FunctionTool):
         return await self.plugin.handle_add_must(event, url_or_bvid, note)
 
 
+@dataclass
+class WhaleBacklogListTool(FunctionTool):
+    plugin: Any = field(repr=False, default=None)
+
+    name: str = "whale_backlog_list"
+    description: str = (
+        "列出「攒着」队列里最近的条目（管理员问「有什么攒着的」「最近有啥」时才调）。"
+        "这个队列只在被问起时出现，插件从不主动推。只接受 admin 会话。"
+    )
+    parameters: dict = field(
+        default_factory=lambda: {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 10, "description": "最多列几条，默认 10"}
+            },
+            "required": [],
+        }
+    )
+
+    async def run(self, event, limit: int = 10) -> str:
+        return await self.plugin.handle_backlog_list(event, limit)
+
+
+@dataclass
+class WhaleBacklogPromoteTool(FunctionTool):
+    plugin: Any = field(repr=False, default=None)
+
+    name: str = "whale_backlog_promote"
+    description: str = (
+        "把攒着的一条升级成 must（走当天 must 额度）。管理员说「这条给我看看」时用。只接受 admin 会话。"
+    )
+    parameters: dict = field(
+        default_factory=lambda: {
+            "type": "object",
+            "properties": {"id": {"type": "string", "description": "backlog 的 id（b- 开头）"}},
+            "required": ["id"],
+        }
+    )
+
+    async def run(self, event, id: str) -> str:
+        return await self.plugin.handle_backlog_promote(event, id)
+
+
+@dataclass
+class WhaleBacklogDropTool(FunctionTool):
+    plugin: Any = field(repr=False, default=None)
+
+    name: str = "whale_backlog_drop"
+    description: str = "把攒着的一条丢弃（管理员说「这条不要了」）。只接受 admin 会话。"
+    parameters: dict = field(
+        default_factory=lambda: {
+            "type": "object",
+            "properties": {"id": {"type": "string", "description": "backlog 的 id（b- 开头）"}},
+            "required": ["id"],
+        }
+    )
+
+    async def run(self, event, id: str) -> str:
+        return await self.plugin.handle_backlog_drop(event, id)
+
+
 TOOL_CLASSES = (
     WhaleScreenResultTool,
     WhaleTrackDeepTool,
@@ -274,4 +350,7 @@ TOOL_CLASSES = (
     WhaleRecallUndiscussedTool,
     WhaleTasteUpdateTool,
     WhaleAddMustTool,
+    WhaleBacklogListTool,
+    WhaleBacklogPromoteTool,
+    WhaleBacklogDropTool,
 )

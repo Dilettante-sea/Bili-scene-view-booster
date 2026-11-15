@@ -16,18 +16,50 @@ def today() -> str:
 
 
 def production_quota(plugin) -> int:
-    primary = plugin.db.count(
-        "musts", "queue='primary' AND state IN ('pending','pushing','pushed')"
+    """今天 must 的总上限（展示用）：无积压 3（2 deep + 1 light），有积压 1。"""
+    return sum(caps(plugin).values())
+
+
+def has_backlog(plugin) -> bool:
+    """主队列里还有没聊完的 must 就算积压。"""
+    return (
+        plugin.db.count(
+            "musts", "queue='primary' AND state IN ('pending','pushing','pushed')"
+        )
+        > 0
     )
-    if primary > 0:
-        return max(1, int(plugin.cfg.get("must_backlog_per_day", 1) or 1))
-    return max(1, int(plugin.cfg.get("must_per_day", 2) or 2))
 
 
-def remaining_today(plugin) -> int:
-    """今天还能产出几条 must（上限随积压变化：有余量时必须_per_day，积压时降到 backlog 值）。"""
-    produced = int(plugin.db.quota(today()).get("must_produced") or 0)
-    return max(0, production_quota(plugin) - produced)
+def caps(plugin) -> dict[str, int]:
+    """按来源分的今日上限。
+
+    无积压：deep 2 + light 1 = 3；
+    有积压：deep 1 + light 0 = 1（只留最值得的那一条 deep-must）。
+    """
+    if has_backlog(plugin):
+        return {
+            "deep": max(1, int(plugin.cfg.get("must_backlog_per_day", 1) or 1)),
+            "light": 0,
+        }
+    return {
+        "deep": max(1, int(plugin.cfg.get("must_per_day", 2) or 2)),
+        "light": max(0, int(plugin.cfg.get("maybe_must_per_day", 1) or 1)),
+    }
+
+
+def produced_today(plugin, source: str) -> int:
+    """今天已经产出的 must 数；deep 把历史的 'auto' 也算进去。"""
+    day = today()
+    if source == "light":
+        return plugin.db.count("musts", "produced_at LIKE ? AND source='light'", (f"{day}%",))
+    return plugin.db.count(
+        "musts", "produced_at LIKE ? AND (source='deep' OR source='auto')", (f"{day}%",)
+    )
+
+
+def remaining_today(plugin, source: str = "deep") -> int:
+    source = "light" if str(source) == "light" else "deep"
+    return max(0, caps(plugin).get(source, 0) - produced_today(plugin, source))
 
 
 def enqueue(
@@ -39,9 +71,12 @@ def enqueue(
     why: str,
     push_text: str = "",
     queue: str = "primary",
+    source: str = "deep",
 ) -> dict[str, Any]:
     must_id = new_id()
-    plugin.db.add_must(must_id, bvid, int(memory_id or 0), one_line, why, push_text, queue=queue)
+    plugin.db.add_must(
+        must_id, bvid, int(memory_id or 0), one_line, why, push_text, queue=queue, source=source
+    )
     plugin.db.bump_quota(today(), "must_produced")
     plugin.db.add_event("must_produced", bvid=bvid, must_id=must_id, memory_id=memory_id)
     return {"id": must_id, "bvid": bvid, "memory_id": int(memory_id or 0), "queue": queue}

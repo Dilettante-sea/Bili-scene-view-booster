@@ -71,6 +71,9 @@ def daily_text(plugin, date: str | None = None) -> str:
         f"终评：must {tiers['must']} / maybe {tiers['maybe']} / no {tiers['no']}",
         f"额度：deep {quota['deep_used']}/天；must 产出 {quota['must_produced']}；maybe {quota['maybe_shared']}",
         f"must 队列：{len(musts)} 条",
+        f"队列：must 待推 {plugin.db.count('musts', 'state=\'pending\'')}"
+        f" / backlog {plugin.db.count_backlog('queued')}"
+        f"/{max(1, int(plugin.cfg.get('backlog_max', 10) or 10))}",
     ]
     for m in musts:
         lines.append(

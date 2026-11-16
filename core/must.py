@@ -117,6 +117,8 @@ def classify(plugin, must_id: str, outcome: str, note: str = "") -> dict[str, An
                 note=note,
             )
         else:
+            # 回炉重推：清掉上一次的 push_text，下一次推送只能由助手重新写，
+            # 避免「三天前那段总结」原样再弹一遍（must_loop 会改走唤醒 admin 的路径）。
             plugin.db.update_must(
                 must_id,
                 state="pending",
@@ -124,6 +126,8 @@ def classify(plugin, must_id: str, outcome: str, note: str = "") -> dict[str, An
                 attempts=attempts,
                 discussion_status="not_fully_discussed",
                 classified_at=now,
+                pushed_at=None,
+                push_text="",
                 note=note,
             )
     plugin.db.add_event("must_classified", must_id=must_id, outcome=outcome, note=note)
@@ -154,8 +158,16 @@ def confirm_pushed(plugin, must_id: str) -> None:
 
 
 def push_prompt(plugin, must: dict) -> str:
+    attempts = int(must.get("attempts") or 0)
+    again = ""
+    if attempts > 0:
+        again = (
+            f"\n注意：这条之前已经推过 {attempts} 次，上次没聊透。"
+            "这次请换一个说法（新的角度、新的问题），不要重复上次那段话。\n"
+        )
     return (
-        "你在管理员私聊里。现在要把一条你自己想给他看的 must 用自己的话说出来。\n\n"
+        "你在管理员私聊里。现在要把一条你自己想给他看的 must 用自己的话说出来。\n"
+        f"{again}\n"
         f"must_id = {must.get('id')}\n"
         f"bvid = {must.get('bvid')}\n"
         f"一句话：{must.get('one_line')}\n"

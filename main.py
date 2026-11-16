@@ -525,6 +525,18 @@ class WhaleSensePlugin(Star):
             ensure_ascii=False,
         )
 
+    async def handle_skip_must(self, event, must_id: str, reason: str = "") -> str:
+        """推送回合里发现这条不用再推：归档 + 拉下一条。"""
+        if not self._validate_admin(event):
+            return "错误：whale_skip_must 只接受管理员私聊会话。"
+        result = must_mod.skip(self, must_id, reason)
+        if not result.get("ok"):
+            return f"没能跳过：{result.get('error')}"
+        return (
+            f"已跳过 {must_id}（{result.get('outcome')}），"
+            "下一条 must 会在下一轮 tick（约 15 秒）里拉上来。"
+        )
+
     # ---- backlog（攒着，只在管理员问起时出）---------------------------
     async def handle_backlog_list(self, event, limit: int = 10) -> str:
         if not self._validate_admin(event):

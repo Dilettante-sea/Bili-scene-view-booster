@@ -341,6 +341,30 @@ class WhaleBacklogDropTool(FunctionTool):
         return await self.plugin.handle_backlog_drop(event, id)
 
 
+@dataclass
+class WhaleSkipMustTool(FunctionTool):
+    plugin: Any = field(repr=False, default=None)
+
+    name: str = "whale_skip_must"
+    description: str = (
+        "推送回合里发现这条 must 其实已经聊透、或现在不值得再推时调用：归档它，"
+        "系统会自动换下一条上来。只接受 admin 会话。"
+    )
+    parameters: dict = field(
+        default_factory=lambda: {
+            "type": "object",
+            "properties": {
+                "must_id": {"type": "string"},
+                "reason": {"type": "string", "description": "为什么跳过；一句话"},
+            },
+            "required": ["must_id"],
+        }
+    )
+
+    async def run(self, event, must_id: str, reason: str = "") -> str:
+        return await self.plugin.handle_skip_must(event, must_id, reason)
+
+
 TOOL_CLASSES = (
     WhaleScreenResultTool,
     WhaleTrackDeepTool,
@@ -350,6 +374,7 @@ TOOL_CLASSES = (
     WhaleRecallUndiscussedTool,
     WhaleTasteUpdateTool,
     WhaleAddMustTool,
+    WhaleSkipMustTool,
     WhaleBacklogListTool,
     WhaleBacklogPromoteTool,
     WhaleBacklogDropTool,

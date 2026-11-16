@@ -134,6 +134,35 @@ def classify(plugin, must_id: str, outcome: str, note: str = "") -> dict[str, An
     return {"ok": True, "id": must_id, "outcome": outcome}
 
 
+def skip(plugin, must_id: str, reason: str = "") -> dict[str, Any]:
+    """推送时发现这条其实不用再推：归档掉，并让 must_loop 立刻拉下一条。
+
+    场景：这条实际上已经聊透了，但助手当时没标记；脚本又把它推上来。
+    助手在推送回合里调 whale_skip_must，这里负责收尾。
+    """
+    note = f"推送时跳过：{reason or '助手判断无需再推'}"
+    must = plugin.db.get_must(must_id) or {}
+    if must.get("state") in {"pushing", "pushed", "admin_discussing", "archived_shallow"}:
+        result = classify(plugin, must_id, "archived_done", note=note)
+    elif must:
+        plugin.db.update_must(
+            must_id,
+            state="archived_done",
+            discussion_status="done",
+            note=note,
+            push_text="",
+        )
+        plugin.db.add_event("must_classified", must_id=must_id, outcome="archived_done", note=note)
+        result = {"ok": True, "id": must_id, "outcome": "archived_done"}
+    else:
+        return {"ok": False, "error": f"找不到 must {must_id}"}
+    if result.get("ok"):
+        # 让下一轮 tick 立刻开工，不用等一小时 idle
+        plugin.db.set_kv("force_next", True)
+        plugin.db.add_event("must_skipped", must_id=must_id, payload_json=json.dumps({"reason": reason}, ensure_ascii=False))
+    return result
+
+
 def next_pending(plugin) -> dict | None:
     item = plugin.db.first_must("primary")
     if item:
@@ -178,7 +207,10 @@ def push_prompt(plugin, must: dict) -> str:
         "2) 带上链接；\n"
         "3) 不要复述字幕，不要贴长段分析；\n"
         "4) 这一轮直接回复这条消息，不要调用 send_message_to_user 或任何发消息工具——你的回复会被发到管理员私聊；\n"
-        "5) 这一轮只发这条消息，不要调用 whale_classify_must；等他回复、聊过之后再分类。"
+        "5) 这一轮只发这条消息，不要调用 whale_classify_must；等他回复、聊过之后再分类。\n"
+        "6) **例外**：如果你判断这条其实已经聊透了、或者现在不值得再推（比如上一轮已经说过同一件事），"
+        "不要硬发——调 whale_skip_must(must_id, reason=\"为什么跳过\")，把它归档，系统会自动换下一条上来；"
+        "这时只用一句话说明你跳过了哪条，不要贴链接。"
     )
 
 

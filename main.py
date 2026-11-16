@@ -368,7 +368,7 @@ class WhaleSensePlugin(Star):
             task_id=task_id,
             must_id=must_id or None,
             origin=origin,
-            payload_json=json.dumps({"mode": mode}, ensure_ascii=False),
+            mode=mode,
         )
         label = "轻读" if mode == "light" else "深读"
         return f"已登记{label}任务 {task_id}（{bvid}，{origin}）；插件会轮询 outbox，结果回来后唤醒对应会话终评。"
@@ -511,7 +511,7 @@ class WhaleSensePlugin(Star):
             key_moments=key_moments or [],
             must_id=must_id or None,
             source="admin" if admin_must else "auto",
-            payload_json=json.dumps({"mode": mode}, ensure_ascii=False),
+            mode=mode,
         )
         return json.dumps(
             {
@@ -749,6 +749,7 @@ class WhaleSensePlugin(Star):
         stats = self.db.stats()
         clock = self.clock.status()
         plan = clock.get("plan") or {}
+        caps = must_mod.caps(self)
         feed = Path(str(cfg.get("feed_cli") or ""))
         cache = Path(str(cfg.get("gateway_cache") or ""))
         node = self.resolve_node()
@@ -768,10 +769,11 @@ class WhaleSensePlugin(Star):
             f"工具：{len(self.tools)} 个；deep 轮询：5s",
             f"must：主 {stats['must_primary']} / 副 {stats['must_secondary']} / 已推 {stats['must_pushed']}",
             f"今日：deep {self.db.quota(must_mod.today())['deep_used']}/{cfg.get('deep_per_day')}；"
-            f"must 产出 {self.db.quota(must_mod.today())['must_produced']}/{must_mod.production_quota(self)}",
+            f"must 产出 {self.db.quota(must_mod.today())['must_produced']}/{must_mod.production_quota(self)}"
+            f"（deep {caps.get('deep', 0)} / 轻读 {caps.get('light', 0)}）",
+            f"轻读：{self.db.quota(must_mod.today()).get('light_used', 0)}/{cfg.get('light_per_day', 2)}；"
+            f"backlog：{self.db.count_backlog('queued')}/{cfg.get('backlog_max', 10)}",
             f"deep 待处理：{stats['deep_pending']}；候选累计：{stats['candidates']}",
-            f"deep 额度：{cfg.get('deep_per_day')}/天；must 产出：{cfg.get('must_per_day')}/天"
-            f"（积压日 {cfg.get('must_backlog_per_day')}）",
         ]
         return "\n".join(lines)
 

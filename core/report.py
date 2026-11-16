@@ -10,6 +10,7 @@ from astrbot.core.message.components import Plain
 from astrbot.core.message.message_event_result import MessageChain
 
 from . import diary as diary_mod
+from . import must as must_mod
 from . import report_time
 
 
@@ -56,7 +57,7 @@ def daily_text(plugin, date: str | None = None) -> str:
         "SELECT payload_json FROM events WHERE kind='judge' AND at LIKE ?",
         (f"{date}%",),
     )
-    tiers = {"must": 0, "maybe": 0, "no": 0}
+    tiers = {"must": 0, "backlog": 0, "no": 0}
     for row in judges:
         try:
             tier = json.loads(row["payload_json"]).get("tier")
@@ -67,10 +68,13 @@ def daily_text(plugin, date: str | None = None) -> str:
 
     lines = [
         f"[鲸·审计] {date}",
-        f"候选：{sum(screens.values())} 条（no {screens.get('no', 0)} / maybe {screens.get('maybe', 0)} / deep {screens.get('deep', 0)}）",
+        f"初筛：{sum(screens.values())} 条（no {screens.get('no', 0)} / maybe {screens.get('maybe', 0)} / deep {screens.get('deep', 0)}）",
         f"深读：done {deep_map.get('done', 0)} / failed {deep_map.get('failed', 0)} / running {deep_map.get('running', 0) + deep_map.get('judging', 0)}",
-        f"终评：must {tiers['must']} / maybe {tiers['maybe']} / no {tiers['no']}",
-        f"额度：deep {quota['deep_used']}/天；must 产出 {quota['must_produced']}；maybe {quota['maybe_shared']}",
+        f"终评：must {tiers['must']} / backlog {tiers['backlog']} / no {tiers['no']}",
+        f"额度：deep {quota['deep_used']}/{plugin.cfg.get('deep_per_day', 5)}；"
+        f"must {quota['must_produced']}/{sum(must_mod.caps(plugin).values())}"
+        f"（deep {must_mod.caps(plugin).get('deep', 0)} / 轻读 {must_mod.caps(plugin).get('light', 0)}）；"
+        f"轻读 {quota.get('light_used', 0)}/{plugin.cfg.get('light_per_day', 2)}",
         f"must 队列：{len(musts)} 条",
         f"队列：must 待推 {plugin.db.count('musts', 'state=\'pending\'')}"
         f" / backlog {plugin.db.count_backlog('queued')}"
@@ -94,7 +98,7 @@ def weekly_text(plugin) -> str:
         "SELECT payload_json FROM events WHERE kind='judge' AND at >= ?",
         (start,),
     )
-    tiers = {"must": 0, "maybe": 0, "no": 0}
+    tiers = {"must": 0, "backlog": 0, "no": 0}
     topics: dict[str, int] = {}
     for row in rows:
         try:
@@ -111,7 +115,7 @@ def weekly_text(plugin) -> str:
     )
     return (
         f"[鲸·周报] {start} ~ {now.date().isoformat()}\n"
-        f"终评：must {tiers['must']} / maybe {tiers['maybe']} / no {tiers['no']}\n"
+        f"终评：must {tiers['must']} / backlog {tiers['backlog']} / no {tiers['no']}\n"
         f"must 产出：{len(musts)} 条\n"
         f"数据源：whale.db + whale-audit.jsonl；详情 /whale report"
     )[:3800]

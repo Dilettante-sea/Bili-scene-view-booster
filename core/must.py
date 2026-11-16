@@ -159,7 +159,7 @@ def skip(plugin, must_id: str, reason: str = "") -> dict[str, Any]:
     if result.get("ok"):
         # 让下一轮 tick 立刻开工，不用等一小时 idle
         plugin.db.set_kv("force_next", True)
-        plugin.db.add_event("must_skipped", must_id=must_id, payload_json=json.dumps({"reason": reason}, ensure_ascii=False))
+        plugin.db.add_event("must_skipped", must_id=must_id, reason=reason)
     return result
 
 

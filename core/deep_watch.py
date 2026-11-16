@@ -202,7 +202,7 @@ class DeepWatcher:
                         {"bvid": bvid, "transcript": "", "transcript_source": "none"}, ensure_ascii=False
                     ),
                 )
-                self.db.add_event("light_empty", bvid=bvid, payload_json=json.dumps({"mode": mode}))
+                self.db.add_event("light_empty", bvid=bvid, mode=mode)
                 continue
             if not transcript.strip() and not keyframes:
                 self.plugin.logger.warning(f"[whale-sense] {bvid} 既无转录也无关键帧，无法终评")

@@ -200,5 +200,11 @@
     "hint": "只在管理员问起时列出最新的这些条；插件从不主动推。",
     "type": "int",
     "default": 10
+  },
+  "must_pushed_expire_hours": {
+    "description": "must 推出去多少小时没人聊就自动归档（0=永不）",
+    "hint": "防止一条没人接的 must 永久堵住队列；归档后立刻推下一条。",
+    "type": "int",
+    "default": 12
   }
 }

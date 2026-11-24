@@ -163,6 +163,38 @@ def skip(plugin, must_id: str, reason: str = "") -> dict[str, Any]:
     return result
 
 
+def expire_stale(plugin, item: dict, now: datetime | None = None) -> bool:
+    """推送后长时间没人接的 must：自动归档，避免它永久卡住整个队列。
+
+    背景：must_loop 只要看到一条 pushed 就整队停止，等管理员聊完再继续。
+    但助手不一定每次都记得分类，于是一条没人接的 must 能把队列卡几天。
+    """
+    if str(item.get("state") or "") != "pushed":
+        return False
+    now = now or datetime.now().astimezone()
+    try:
+        base = datetime.fromisoformat(str(item.get("pushed_at") or item.get("produced_at") or ""))
+    except Exception:
+        return False
+    try:
+        hours = float(plugin.cfg.get("must_pushed_expire_hours", 12) or 0)
+    except (TypeError, ValueError):
+        hours = 12.0
+    if hours <= 0:
+        return False
+    if (now - base).total_seconds() < hours * 3600:
+        return False
+    plugin.db.update_must(
+        item["id"],
+        state="archived_no_reply",
+        discussion_status="no_reply",
+        classified_at=now.isoformat(timespec="seconds"),
+        note=f"推送后 {hours:g} 小时没人接，自动归档",
+    )
+    plugin.db.add_event("must_expired", must_id=item["id"], bvid=item.get("bvid"), hours=hours)
+    return True
+
+
 def next_pending(plugin) -> dict | None:
     item = plugin.db.first_must("primary")
     if item:

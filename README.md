@@ -518,6 +518,7 @@ node /path/to/bili-sense/bili-sense.mjs feed --json --n 5 --min-duration 180
 | `backlog_max`                           | 10                | 「攒着」队列上限，FIFO 挤最旧       |
 | `idle_minutes`                          | 60                | 距助手最后一条消息多久才推 must    |
 | `max_shallow_attempts`                  | 3                 | 没聊透最多推几次              |
+| `must_pushed_expire_hours`              | 12                | 推出去多久没人接就自动归档（0=永不） |
 | `diary_dir`                             | 空                 | 日记目录；空则 `插件目录/diary/YYYY-MM/M-D.md` |
 | `report_daily_at` / `report_weekly_at`  | 23:30 / Sun 21:00 | 报告时间；错过会补发最近一次（带 `[补发]` 前缀） |
 | `dry_run`                               | false             | 只审计/日记，不唤醒/不派单/不发送    |

@@ -52,6 +52,8 @@ def light_dispatch_content(bvid: str, hypothesis: str) -> str:
   "errors": []
 }}
 5) 禁止评论/私信/点赞/收藏/关注/分享；禁止写记忆。
+6) 本任务只要文字、不要落盘产物；如果确实需要临时文件，一律写到
+   D:\\Imacoldfish\\videocuts\\{bvid}\\asr\\ 下，禁止写到 D:\\Imacoldfish 根目录。
 
 初筛假设（只作背景，不要据此编造内容）：{hypothesis or '无'}"""
 
@@ -59,10 +61,16 @@ def light_dispatch_content(bvid: str, hypothesis: str) -> str:
 def deep_dispatch_content(bvid: str, hypothesis: str) -> str:
     return f"""只读任务：读取 https://www.bilibili.com/video/{bvid} 。
 
+产物目录（硬性）：
+- 本项目所有产物必须写在 D:\\Imacoldfish\\videocuts\\{bvid}\\ 下，子目录固定：
+  frames\\（普通抽帧）、keyframes\\（挑过的关键帧）、asr\\（切片 wav / 转录 json / 临时脚本）、sheets\\（分镜图、联络表）。
+- 目录不存在就自己建。**禁止**把文件写到 D:\\Imacoldfish 根目录，也不要新建 bv*、bili_*、bili-* 这类散落目录。
+- 插件自身缓存（~/.dsh）不用管。
+
 要求：
 1) 只返回素材，不做评价、不打标签、不选片；
 2) 完整转录（官方字幕/ASR/OCR 任一），标明来源；
-3) 抽帧关键画面，给出绝对路径与时间码；
+3) 抽帧关键画面，给出绝对路径与时间码（路径必须落在上面那个目录里）；
 4) 只输出一个 JSON 代码块，字段：
 {{
   "bvid": "{bvid}",
@@ -70,7 +78,7 @@ def deep_dispatch_content(bvid: str, hypothesis: str) -> str:
   "duration": 123,
   "transcript": "...",
   "transcript_source": "subtitle|asr|ocr|mixed|none",
-  "keyframes": [{{"path": "D:\\\\...\\\\f1.png", "t": 12.3, "note": "..."}}],
+  "keyframes": [{{"path": "D:\\\\Imacoldfish\\\\videocuts\\\\{bvid}\\\\keyframes\\\\f1.png", "t": 12.3, "note": "..."}}],
   "scene_notes": ["00:12 ..."],
   "has_subtitle": true,
   "errors": []

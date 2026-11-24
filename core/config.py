@@ -36,6 +36,7 @@ DEFAULTS: dict[str, Any] = {
     "light_per_day": 2,
     "backlog_max": 10,
     "idle_minutes": 60,
+    "must_pushed_expire_hours": 12,
     "max_shallow_attempts": 3,
     "diary_dir": "",
     "report_daily_at": "23:30",

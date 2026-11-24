@@ -76,7 +76,13 @@ class MustDispatcher:
                 if (now - dt).total_seconds() > 600:
                     self.db.update_must(pushed["id"], state="pending")
                     self.plugin.logger.info(f"[whale-sense] must {pushed['id']} 发送超时，退回 pending")
-            return
+                return
+            # 推出去很久没人接：归档掉，别让它永久堵住队列
+            if not must_mod.expire_stale(self.plugin, pushed, now):
+                return
+            self.plugin.logger.info(
+                f"[whale-sense] must {pushed['id']} 推送后超时未聊，归档并继续下一条"
+            )
         item = must_mod.next_pending(self.plugin)
         if not item:
             return

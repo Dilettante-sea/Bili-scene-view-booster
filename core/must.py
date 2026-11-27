@@ -89,7 +89,7 @@ def classify(plugin, must_id: str, outcome: str, note: str = "") -> dict[str, An
     outcome = str(outcome or "").strip()
     if outcome not in {"archived_done", "discarded_not_interested", "later_shallow"}:
         return {"ok": False, "error": "outcome 必须是 archived_done / discarded_not_interested / later_shallow"}
-    if must["state"] not in {"pushing", "pushed", "admin_discussing", "archived_shallow"}:
+    if must["state"] not in {"pushing", "pushed", "admin_discussing", "archived_shallow", "archived_no_reply"}:
         return {"ok": False, "error": f"must 当前状态 {must['state']} 不能分类"}
     now = datetime.now().astimezone().isoformat(timespec="seconds")
     if outcome == "archived_done":
@@ -132,6 +132,38 @@ def classify(plugin, must_id: str, outcome: str, note: str = "") -> dict[str, An
             )
     plugin.db.add_event("must_classified", must_id=must_id, outcome=outcome, note=note)
     return {"ok": True, "id": must_id, "outcome": outcome}
+
+
+def no_reply_items(plugin, limit: int = 10) -> list[dict]:
+    """「推出去没人接、已自动归档」的那一队，供助手回看和改状态。"""
+    return plugin.db.musts_by_state("archived_no_reply", limit)
+
+
+def requeue(plugin, must_id: str, queue: str = "primary") -> dict[str, Any]:
+    """把 no_reply / 没聊透 的 must 重新排回待推队列（无暇处理的补救）。
+
+    重排会清掉旧 push_text——和回炉重推一致，下次必须由助手重新写说法。
+    """
+    must = plugin.db.get_must(must_id)
+    if not must:
+        return {"ok": False, "error": f"找不到 must {must_id}"}
+    state = str(must.get("state") or "")
+    if state not in {"archived_no_reply", "archived_shallow", "archived_done"}:
+        return {"ok": False, "error": f"状态 {state} 不能重排"}
+    queue = "secondary" if str(queue) == "secondary" else "primary"
+    old_note = str(must.get("note") or "").strip()
+    plugin.db.update_must(
+        must_id,
+        state="pending",
+        queue=queue,
+        pushed_at=None,
+        push_text="",
+        discussion_status="pending",
+        classified_at=None,
+        note=(old_note + " | 重新排回待推") if old_note else "重新排回待推",
+    )
+    plugin.db.add_event("must_requeued", must_id=must_id, bvid=must.get("bvid"), queue=queue)
+    return {"ok": True, "id": must_id, "bvid": must.get("bvid"), "queue": queue, "from": state}
 
 
 def skip(plugin, must_id: str, reason: str = "") -> dict[str, Any]:

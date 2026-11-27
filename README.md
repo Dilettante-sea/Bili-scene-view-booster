@@ -74,10 +74,14 @@
 pending -> pushing -> pushed
                        ├─ archived_done               聊透，归档
                        ├─ discarded_not_interested    不感兴趣，丢弃；记忆保留
-                       └─ later_shallow               没聊透
-                             ├─ attempts < 3 -> secondary/pending
-                             └─ attempts >= 3 -> archived_shallow（出队，不再主动推）
+                       ├─ later_shallow               没聊透
+                       │    ├─ attempts < 3 -> secondary/pending（清空旧 push_text，重写）
+                       │    └─ attempts >= 3 -> archived_shallow（出队，不再主动推）
+                       └─ 超时没人接 -> archived_no_reply（不阻塞队列）
 ```
+
+- `archived_no_reply`：推出去超过 `must_pushed_expire_hours`（默认 12 小时）没人接，自动归档并放行下一条；不删、不丢。
+- 这一队可以回头处理：`whale_noreply_list` 读、`whale_classify_must` 标 done/drop/later、`whale_requeue_must` 排回待推（重排会清空旧 `push_text`，下次重写）。
 
 - 全局同时只允许一条 `pushing`/`pushed`；`admin_pending` / `admin_reading` / `admin_discussing` 也会阻塞自动推送。
 - 推送条件：距助手在 admin 的最后一条消息至少 60 分钟（可配），且不在安静时段。

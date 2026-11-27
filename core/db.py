@@ -444,6 +444,14 @@ class DB:
             ).fetchall()
         return [dict(r) for r in rows]
 
+    def musts_by_state(self, state: str, limit: int = 20) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT * FROM musts WHERE state=? ORDER BY COALESCE(classified_at, pushed_at, produced_at) DESC LIMIT ?",
+                (str(state), int(limit)),
+            ).fetchall()
+        return [dict(r) for r in rows]
+
     def list_deep(self, limit: int = 20) -> list[dict]:
         with self._lock:
             rows = self.conn.execute(

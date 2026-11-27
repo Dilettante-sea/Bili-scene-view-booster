@@ -365,6 +365,57 @@ class WhaleSkipMustTool(FunctionTool):
         return await self.plugin.handle_skip_must(event, must_id, reason)
 
 
+@dataclass
+class WhaleNoreplyListTool(FunctionTool):
+    plugin: Any = field(repr=False, default=None)
+
+    name: str = "whale_noreply_list"
+    description: str = (
+        "列出「推出去没人接、已自动归档（no_reply）」的 must，最近优先。"
+        "管理员说「前阵子推的我都还没看」或想补处理时调用。只接受 admin 会话。"
+    )
+    parameters: dict = field(
+        default_factory=lambda: {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 10, "description": "最多列几条"}
+            },
+            "required": [],
+        }
+    )
+
+    async def run(self, event, limit: int = 10) -> str:
+        return await self.plugin.handle_noreply_list(event, limit)
+
+
+@dataclass
+class WhaleRequeueMustTool(FunctionTool):
+    plugin: Any = field(repr=False, default=None)
+
+    name: str = "whale_requeue_must"
+    description: str = (
+        "把 no_reply（或没聊透归档）的 must 重新排回待推队列。只接受 admin 会话。"
+        "重排会清空旧 push_text，下次推送时由助手重写新的说法。"
+    )
+    parameters: dict = field(
+        default_factory=lambda: {
+            "type": "object",
+            "properties": {
+                "must_id": {"type": "string"},
+                "queue": {
+                    "type": "string",
+                    "enum": ["primary", "secondary"],
+                    "default": "primary",
+                },
+            },
+            "required": ["must_id"],
+        }
+    )
+
+    async def run(self, event, must_id: str, queue: str = "primary") -> str:
+        return await self.plugin.handle_requeue_must(event, must_id, queue)
+
+
 TOOL_CLASSES = (
     WhaleScreenResultTool,
     WhaleTrackDeepTool,
@@ -375,6 +426,8 @@ TOOL_CLASSES = (
     WhaleTasteUpdateTool,
     WhaleAddMustTool,
     WhaleSkipMustTool,
+    WhaleNoreplyListTool,
+    WhaleRequeueMustTool,
     WhaleBacklogListTool,
     WhaleBacklogPromoteTool,
     WhaleBacklogDropTool,

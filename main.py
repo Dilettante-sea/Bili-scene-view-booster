@@ -537,6 +537,40 @@ class WhaleSensePlugin(Star):
             "下一条 must 会在下一轮 tick（约 15 秒）里拉上来。"
         )
 
+    # ---- 推出去没人接的那一队（no_reply）：可读、可改 ----------------
+    def _noreply_text(self, limit: int = 10) -> str:
+        rows = must_mod.no_reply_items(self, limit)
+        if not rows:
+            return "no_reply 队列是空的（没有「推出去没人接」的记录）。"
+        lines = [f"推出去没人接、已归档的 {len(rows)} 条（最近优先）："]
+        for row in rows:
+            lines.append(
+                f"- [{row['id']}] {row.get('bvid')}"
+                f" {str(row.get('one_line') or '')[:60]}"
+                f"（推出 {row.get('pushed_at') or '?'}）"
+            )
+        lines.append(
+            "可以：whale_classify_must 标 done/drop/later；"
+            "或 whale_requeue_must 把它排回待推（会清掉旧文案，下次重写）。"
+        )
+        return "\n".join(lines)
+
+    async def handle_noreply_list(self, event, limit: int = 10) -> str:
+        if not self._validate_admin(event):
+            return "错误：whale_noreply_list 只接受管理员私聊会话。"
+        return self._noreply_text(limit)
+
+    async def handle_requeue_must(self, event, must_id: str, queue: str = "primary") -> str:
+        if not self._validate_admin(event):
+            return "错误：whale_requeue_must 只接受管理员私聊会话。"
+        result = must_mod.requeue(self, must_id, queue)
+        if not result.get("ok"):
+            return f"没能重排：{result.get('error')}"
+        return (
+            f"已把 {result['bvid']}（{result['id']}）从 {result['from']} 排回待推队列"
+            f"（{result['queue']}），下一轮 tick 会按顺序推；旧文案已清空，推的时候会重写。"
+        )
+
     # ---- backlog（攒着，只在管理员问起时出）---------------------------
     async def handle_backlog_list(self, event, limit: int = 10) -> str:
         if not self._validate_admin(event):
@@ -861,9 +895,20 @@ class WhaleSensePlugin(Star):
             self.db.set_kv("force_next", True)
             yield event.plain_result("已排队：下一 tick 立即推下一条 must（若当前 pushed 未分类，会按 later_shallow 处理）。")
             return
+        if action == "noreply":
+            yield event.plain_result(self._noreply_text(10))
+            return
+        if action == "requeue" and must_id:
+            yield event.plain_result(
+                json.dumps(must_mod.requeue(self, must_id), ensure_ascii=False)
+            )
+            return
         mapping = {"done": "archived_done", "drop": "discarded_not_interested", "later": "later_shallow"}
         if action not in mapping or not must_id:
-            yield event.plain_result("用法：/whale must done|drop|later <must_id>，或 /whale must next")
+            yield event.plain_result(
+                "用法：/whale must done|drop|later <must_id>；/whale must requeue <must_id>；"
+                "/whale must noreply；/whale must next"
+            )
             return
         result = must_mod.classify(self, must_id, mapping[action], "admin command")
         yield event.plain_result(json.dumps(result, ensure_ascii=False))

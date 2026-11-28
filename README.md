@@ -171,6 +171,7 @@ pending -> pushing -> pushed
 - 标签权重/审计有单独页面：`views/tags/index.html`，从插件详情页打开。
 - 页面分 `Admin Like` / `Assistant Taste` / `Block` / `Audit` 四个 tab；管理员可编辑权重、`locked`、`pinned`、屏蔽和查看审计。
 - Admin Like 支持删除；删除时会同时把同名 assistant taste 静音，避免它从 taste-only 路径被重新搜出来。
+- Assistant Taste 里：**保存** = 把这一行的权重写成手动值（manual delta，effective = 学习值 + 手动值）；**静音** = `status=muted`，该标签不再参与选片，行自动沉到列表底部并打上「已静音」徽标，按钮变成**取消静音**（`action=unmute`）。
 - 删除采用**两击确认**（第一次按钮变“确认删除”，第二次才执行）；AstrBot 的 iframe sandbox 不保证 `window.confirm` 可用。
 - 没有独立前端工程；页面是单文件 HTML + 原生 JS。
 

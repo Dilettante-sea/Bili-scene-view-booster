@@ -368,8 +368,8 @@ def manual_update(
     if not tag:
         return {"ok": False, "error": "tag 为空"}
     action = str(action or "").strip().lower()
-    if action not in {"add", "adjust", "set", "remove"}:
-        return {"ok": False, "error": "action 必须是 add/adjust/set/remove"}
+    if action not in {"add", "adjust", "set", "remove", "unmute"}:
+        return {"ok": False, "error": "action 必须是 add/adjust/set/remove/unmute"}
     row = _one(plugin, "SELECT * FROM taste_tags WHERE tag=?", (tag,))
     before = dict(row) if row is not None else None
     current = float(row["manual_delta"] or 0) if row is not None else 0.0
@@ -377,6 +377,10 @@ def manual_update(
         if row is None:
             return {"ok": False, "error": f"taste 不存在：{tag}"}
         _exec(plugin, "UPDATE taste_tags SET status='muted' WHERE tag=?", (tag,))
+    elif action == "unmute":
+        if row is None:
+            return {"ok": False, "error": f"taste 不存在：{tag}"}
+        _exec(plugin, "UPDATE taste_tags SET status='active' WHERE tag=?", (tag,))
     else:
         if actor == "assistant":
             if abs(value) > 0.5 + 1e-9:

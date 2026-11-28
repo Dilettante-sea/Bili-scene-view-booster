@@ -28,6 +28,10 @@
     .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px; }
     .row input[type=text] { max-width:320px; }
     .muted { color:var(--muted); font-size:12px; }
+  tr.is-muted td { opacity:.5; }
+  tr.is-muted td:first-child strong { text-decoration:line-through; }
+  tr.is-sep td { background:transparent; border-top:1px dashed var(--line); color:var(--muted); font-size:12px; padding-top:10px; }
+  .badge-muted { display:inline-block; margin-left:6px; padding:0 6px; border-radius:8px; font-size:11px; background:var(--line); color:var(--muted); vertical-align:middle; }
     .ok { color:#2e9b5b; }
     .err { color:var(--danger); }
     details { margin-top:8px; }
@@ -51,7 +55,7 @@
     <table><thead><tr><th>Tag</th><th>Search query</th><th>Base</th><th>Effective</th><th>Locked</th><th>Pinned</th><th>Status</th><th></th></tr></thead><tbody id="admin-rows"></tbody></table>
   </div>
   <div class="panel" id="panel-taste">
-    <div class="row"><span class="muted">助手自己的 taste；学习值 + 管理员手调。助手只能改 taste，不能改 Admin Like / Block。</span></div>
+    <div class="row"><span class="muted">助手自己的 taste；学习值 + 管理员手调。助手只能改 taste，不能改 Admin Like / Block。"保存" = 把这一行的 weight 写成手动值（manual delta）；"静音" = 该标签不再参与选片，沉到列表底部，可随时"取消静音"。</span></div>
     <table><thead><tr><th>Tag</th><th>Weight</th><th>Learned</th><th>Confidence</th><th>n</th><th>Status</th><th>Last signal</th><th></th></tr></thead><tbody id="taste-rows"></tbody></table>
   </div>
   <div class="panel" id="panel-block">
@@ -125,17 +129,32 @@ function renderAdmin() {
     </tr>`).join('') || '<tr><td colspan="8" class="muted">暂无 admin tag</td></tr>';
 }
 function renderTaste() {
-  $('taste-rows').innerHTML = (data.taste || []).map((r) => `
-    <tr data-tag="${esc(r.tag)}">
-      <td><strong>${esc(r.tag)}</strong></td>
-      <td><input type="number" step="0.1" min="-5" max="5" data-k="weight" value="${num(r.weight)}"></td>
+  const rows = [...(data.taste || [])].sort((a, b) => {
+    const am = a.status === 'muted' ? 1 : 0, bm = b.status === 'muted' ? 1 : 0;
+    if (am !== bm) return am - bm;              // 静音的沉底
+    return num(b.weight) - num(a.weight);        // 其余按权重降序
+  });
+  const muted = rows.filter((r) => r.status === 'muted').length;
+  const html = rows.map((r, i) => {
+    const isMuted = r.status === 'muted';
+    const sep = (isMuted && muted && i > 0 && rows[i - 1].status !== 'muted')
+      ? `<tr class="is-sep"><td colspan="8">已静音 ${muted} 个（不参与选片，点「取消静音」恢复）</td></tr>` : '';
+    return sep + `
+    <tr data-tag="${esc(r.tag)}" class="${isMuted ? 'is-muted' : ''}">
+      <td><strong>${esc(r.tag)}</strong>${isMuted ? '<span class="badge-muted">已静音</span>' : ''}</td>
+      <td><input type="number" step="0.1" min="-5" max="5" data-k="weight" value="${num(r.weight)}" ${isMuted ? 'disabled' : ''}></td>
       <td>${num(r.learned_weight).toFixed(2)} <span class="muted">manual ${num(r.manual_delta).toFixed(2)}</span></td>
       <td>${num(r.confidence).toFixed(2)}</td>
       <td>${num(r.n).toFixed(1)}</td>
-      <td>${esc(r.status || '')}</td>
+      <td>${isMuted ? '已静音' : esc(r.status || '')}</td>
       <td class="muted">${esc(r.last_signal_at || '')}</td>
-      <td><button class="act" data-save-taste>保存</button> <button class="act danger" data-mute>静音</button></td>
-    </tr>`).join('') || '<tr><td colspan="8" class="muted">暂无 taste，等助手看几条视频后出现</td></tr>';
+      <td><button class="act" data-save-taste ${isMuted ? 'disabled title="已静音，取消静音后可改"' : ''}>保存</button>
+          ${isMuted
+            ? '<button class="act" data-unmute>取消静音</button>'
+            : '<button class="act danger" data-mute>静音</button>'}</td>
+    </tr>`;
+  }).join('');
+  $('taste-rows').innerHTML = html || '<tr><td colspan="8" class="muted">暂无 taste，等助手看几条视频后出现</td></tr>';
 }
 function renderBlock() {
   $('block-rows').innerHTML = (data.block || []).map((tag) => `
@@ -180,6 +199,9 @@ document.addEventListener('click', async (ev) => {
       await load();
     } else if (ev.target.matches('[data-mute]')) {
       await api('/tags/taste', { method:'POST', body: JSON.stringify({ tag, action:'remove', reason:'muted from UI' }) });
+      await load();
+    } else if (ev.target.matches('[data-unmute]')) {
+      await api('/tags/taste', { method:'POST', body: JSON.stringify({ tag, action:'unmute', reason:'unmuted from UI' }) });
       await load();
     } else if (ev.target.matches('[data-unblock]')) {
       await api('/tags/block', { method:'POST', body: JSON.stringify({ tag, action:'unblock', reason:'UI unblock' }) });
